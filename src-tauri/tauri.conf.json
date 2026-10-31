@@ -1,0 +1,59 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MineHouse",
+  "mainBinaryName": "minehouse-launcher",
+  "identifier": "pro.minehouse.launcher",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "MineHouse",
+        "width": 960,
+        "height": 600,
+        "minWidth": 760,
+        "minHeight": 520,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' https://mc-heads.net data:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "dmg", "app", "appimage", "deb"],
+    "createUpdaterArtifacts": true,
+    "category": "Game",
+    "shortDescription": "Лаунчер сервера MineHouse",
+    "longDescription": "Ставит Java, Minecraft, Fabric и сборку MineHouse и запускает игру сразу на play.minehouse.pro.",
+    "copyright": "MineHouse. Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["Russian", "English"]
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIxRkE3NTY3NDg1REE3NUYKUldSZnAxMUlaM1g2SVoxVndQaTNwSEh3NkN6SDZkRjcrek45QjVBUjFyRlZUeU13T3MzYlZTNncK",
+      "endpoints": [
+        "https://github.com/P5ina/minehouse-launcher/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}
