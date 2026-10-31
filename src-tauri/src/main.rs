@@ -62,7 +62,7 @@ async fn info(app: State<'_, Arc<App>>) -> Res<Info> {
 
 #[tauri::command]
 async fn server_status() -> Res<ping::Status> {
-    ping::ping(minehouse_core::SERVER, 25565).await.map_err(err)
+    ping::ping(minehouse_core::SERVER_HOST, minehouse_core::SERVER_PORT).await.map_err(err)
 }
 
 #[tauri::command]
