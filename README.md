@@ -53,7 +53,7 @@ Linux: нужны `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-d
 ## Релиз и автообновление
 
 1. Поднять `version` в `Cargo.toml`.
-2. `git tag v0.2.0 && git push --tags`.
+2. Actions → Release → Run workflow (или `git tag v0.2.0 && git push --tags`).
 
 Workflow `release.yml` собирает установщики (Windows NSIS, macOS dmg arm/intel,
 Linux AppImage/deb), подписывает обновления ключом из секрета
