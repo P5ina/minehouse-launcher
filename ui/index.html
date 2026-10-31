@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MineHouse</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="update" class="banner" hidden>
+    <span id="update-text">Доступна новая версия лаунчера</span>
+    <button id="update-btn" class="small">Обновить</button>
+  </div>
+
+  <main>
+    <section class="hero">
+      <img src="logo.png" alt="" class="logo">
+      <div>
+        <h1>MineHouse</h1>
+        <p class="sub">Ванилла+ сервер · play.minehouse.pro</p>
+        <p id="status" class="status"><span class="dot"></span><span id="status-text">Проверяем сервер…</span></p>
+      </div>
+    </section>
+
+    <section class="links">
+      <button class="link" data-url="https://www.minehouse.pro">Сайт</button>
+      <button class="link" data-url="https://www.minehouse.pro/wiki">Вики</button>
+      <button class="link" data-url="https://discord.gg/gCYGxDzaCb">Discord</button>
+    </section>
+
+    <section id="log-panel" class="log" hidden><pre id="log"></pre></section>
+  </main>
+
+  <footer>
+    <div class="account" id="account">
+      <img id="avatar" alt="" hidden>
+      <div class="who">
+        <span id="account-name">Не выполнен вход</span>
+        <span id="pack" class="muted"></span>
+      </div>
+    </div>
+
+    <div class="progress-wrap">
+      <div id="stage" class="muted"></div>
+      <div class="bar"><div id="bar"></div></div>
+    </div>
+
+    <div class="actions">
+      <button id="log-btn" class="icon" title="Журнал">≡</button>
+      <button id="settings-btn" class="icon" title="Настройки">⚙</button>
+      <button id="play" class="play">Войти</button>
+    </div>
+  </footer>
+
+  <dialog id="login">
+    <h2>Вход через Microsoft</h2>
+    <p>Откройте страницу входа и введите код. Нужен аккаунт с купленной Minecraft: Java Edition.</p>
+    <div id="code" class="code">…</div>
+    <div class="row">
+      <button id="copy-code" class="secondary">Скопировать код</button>
+      <button id="open-login">Открыть страницу входа</button>
+    </div>
+    <p id="login-error" class="error" hidden></p>
+    <p class="muted small-text">Нет лицензии? Minecraft: Java Edition входит в PC Game Pass.</p>
+    <form method="dialog"><button class="ghost">Отмена</button></form>
+  </dialog>
+
+  <dialog id="settings">
+    <h2>Настройки</h2>
+    <label>Память для игры: <b id="mem-value"></b>
+      <input id="mem" type="range" min="2048" max="16384" step="512">
+    </label>
+    <label class="check"><input id="close-on-launch" type="checkbox"> Скрывать лаунчер во время игры</label>
+    <label>Доп. параметры Java
+      <input id="jvm" type="text" placeholder="например -XX:+UseZGC" spellcheck="false">
+    </label>
+    <div class="row">
+      <button id="open-dir" class="secondary">Открыть папку игры</button>
+      <button id="logout" class="secondary danger" hidden>Выйти из аккаунта</button>
+    </div>
+    <p id="version" class="muted small-text"></p>
+    <form method="dialog" class="row end"><button id="settings-save">Готово</button></form>
+  </dialog>
+
+  <script src="main.js"></script>
+</body>
+</html>

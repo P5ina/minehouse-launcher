@@ -1,0 +1,55 @@
+name: Release
+# Push a tag like v0.2.0 (same as "version" in Cargo.toml) to publish
+# installers and latest.json, which running launchers update from.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows, os: windows-latest, args: "" }
+          - { name: macos-arm, os: macos-latest, args: "--target aarch64-apple-darwin" }
+          - { name: macos-intel, os: macos-latest, args: "--target x86_64-apple-darwin" }
+          - { name: linux, os: ubuntu-22.04, args: "" }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ startsWith(matrix.os, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+      - run: pnpm install --frozen-lockfile
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          # Azure app (public client ID, not a secret), see README.
+          MINEHOUSE_MS_CLIENT_ID: ${{ vars.MINEHOUSE_MS_CLIENT_ID }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: MineHouse Launcher ${{ github.ref_name }}
+          releaseBody: Скачайте установщик для своей системы ниже. Уже установленный лаунчер обновится сам.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}
