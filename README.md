@@ -47,8 +47,8 @@ Linux: нужны `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-d
    «Personal Microsoft accounts only». В Authentication включить «Allow public client flows».
 2. Отправить Application (client) ID на одобрение Minecraft API: <https://aka.ms/mce-reviewappid>.
    Пока Mojang не одобрит, вход останавливается на шаге Minecraft (403).
-3. Settings → Secrets and variables → Actions → **Variables**: `MINEHOUSE_MS_CLIENT_ID` = client ID.
-   Локально: `MINEHOUSE_MS_CLIENT_ID=... pnpm tauri dev`.
+3. Client ID записан в `crates/core/src/auth.rs` (`DEFAULT_CLIENT_ID`, сейчас приложение
+   «MineHouse Launcher» `f33e99c2-…`). Переопределить можно переменной `MINEHOUSE_MS_CLIENT_ID`.
 
 ## Релиз и автообновление
 
