@@ -41,7 +41,10 @@ async fn main() -> Result<()> {
                 inst.pack_version
             );
         }
-        Some("ping") => println!("{:?}", ping::ping(minehouse_core::SERVER, 25565).await?),
+        Some("ping") => println!(
+            "{:?}",
+            ping::ping(minehouse_core::SERVER_HOST, minehouse_core::SERVER_PORT).await?
+        ),
         Some("login") => {
             let client = http::client();
             let code = auth::start_device_code(&client).await?;
