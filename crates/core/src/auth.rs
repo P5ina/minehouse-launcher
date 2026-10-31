@@ -2,8 +2,7 @@
 //! Xbox Live → XSTS → Minecraft services, plus the ownership check.
 //! No offline/cracked mode exists, by design (Mojang EULA).
 //!
-//! The Azure app's client ID is baked in at build time from
-//! `MINEHOUSE_MS_CLIENT_ID` (it is public, not a secret). The app needs
+//! The Azure app's client ID is public, not a secret: [`DEFAULT_CLIENT_ID`]. The app needs
 //! Mojang's approval for the Minecraft API: https://aka.ms/mce-reviewappid
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -21,12 +20,16 @@ const MC_LOGIN: &str = "https://api.minecraftservices.com/authentication/login_w
 const MC_ENTITLEMENTS: &str = "https://api.minecraftservices.com/entitlements/mcstore";
 const MC_PROFILE: &str = "https://api.minecraftservices.com/minecraft/profile";
 
-/// Build-time client ID, or `MINEHOUSE_MS_CLIENT_ID` at runtime for development.
+/// Azure app "MineHouse Launcher" (personal Microsoft accounts, public client).
+pub const DEFAULT_CLIENT_ID: &str = "f33e99c2-e342-4abc-b829-44bd861ee6f6";
+
+/// `MINEHOUSE_MS_CLIENT_ID` at build or run time overrides the built-in app.
 pub fn client_id() -> Option<String> {
     option_env!("MINEHOUSE_MS_CLIENT_ID")
         .map(str::to_owned)
         .or_else(|| std::env::var("MINEHOUSE_MS_CLIENT_ID").ok())
         .filter(|s| !s.trim().is_empty())
+        .or_else(|| Some(DEFAULT_CLIENT_ID.to_owned()))
 }
 
 fn require_client_id() -> Result<String> {
