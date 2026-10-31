@@ -97,6 +97,20 @@ async fn save_settings(app: State<'_, Arc<App>>, settings: Settings) -> Res<()> 
     s.save(&app.paths).map_err(err)
 }
 
+/// Opens an https link in the default browser. Done on the Rust side so the
+/// webview needs no opener URL scope (the bare allow-open-url permission had none).
+#[tauri::command]
+async fn open_url(handle: AppHandle, url: String) -> Res<()> {
+    use tauri_plugin_opener::OpenerExt;
+    if !url.starts_with("https://") {
+        return Err("Можно открывать только https-ссылки".into());
+    }
+    handle
+        .opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn open_game_dir(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
     use tauri_plugin_opener::OpenerExt;
@@ -175,6 +189,7 @@ fn main() {
             login_finish,
             logout,
             save_settings,
+            open_url,
             open_game_dir,
             play
         ])

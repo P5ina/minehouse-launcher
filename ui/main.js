@@ -17,6 +17,9 @@ function log(line) {
   el.textContent = logLines.join("\n")
   el.parentElement.scrollTop = el.parentElement.scrollHeight
 }
+function openUrl(url) {
+  return invoke("open_url", { url }).catch((e) => log(`Не удалось открыть ссылку: ${e}`))
+}
 function mb(n) { return n >= 1024 ? `${(n / 1024).toFixed(n % 1024 ? 1 : 0)} ГБ` : `${n} МБ` }
 
 function render() {
@@ -69,9 +72,9 @@ async function login() {
     return
   }
   $("code").textContent = code.user_code
-  $("open-login").onclick = () => T.opener.openUrl(code.verification_uri)
+  $("open-login").onclick = () => openUrl(code.verification_uri)
   $("copy-code").onclick = () => navigator.clipboard.writeText(code.user_code)
-  T.opener.openUrl(code.verification_uri).catch(() => {})
+  openUrl(code.verification_uri).catch(() => {})
   try {
     await invoke("login_finish", { code })
     if (dlg.open) dlg.close()
@@ -155,7 +158,7 @@ $("mem").oninput = () => { $("mem-value").textContent = mb(Number($("mem").value
 $("log-btn").onclick = () => { $("log-panel").hidden = !$("log-panel").hidden }
 $("open-dir").onclick = () => invoke("open_game_dir")
 $("logout").onclick = async () => { await invoke("logout"); $("settings").close(); await refresh() }
-for (const b of document.querySelectorAll("[data-url]")) b.onclick = () => T.opener.openUrl(b.dataset.url)
+for (const b of document.querySelectorAll("[data-url]")) b.onclick = () => openUrl(b.dataset.url)
 
 refresh().then(() => { pingServer(); checkUpdate() })
 setInterval(pingServer, 60_000)
