@@ -1,7 +1,9 @@
 name: Release
-# Push a tag like v0.2.0 (same as "version" in Cargo.toml) to publish
-# installers and latest.json, which running launchers update from.
+# Publishes installers and latest.json (running launchers update from it) as
+# release v<version from Cargo.toml>. Run it from the Actions tab
+# ("Run workflow") after bumping the version, or push a tag like v0.2.0.
 on:
+  workflow_dispatch:
   push:
     tags: ["v*"]
 
@@ -46,8 +48,8 @@ jobs:
           # Azure app (public client ID, not a secret), see README.
           MINEHOUSE_MS_CLIENT_ID: ${{ vars.MINEHOUSE_MS_CLIENT_ID }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: MineHouse Launcher ${{ github.ref_name }}
+          tagName: v__VERSION__
+          releaseName: MineHouse Launcher v__VERSION__
           releaseBody: Скачайте установщик для своей системы ниже. Уже установленный лаунчер обновится сам.
           releaseDraft: false
           prerelease: false
