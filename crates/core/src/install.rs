@@ -10,7 +10,7 @@ use crate::minecraft::{self, VersionJson};
 use crate::paths::Paths;
 use crate::progress::Reporter;
 use crate::rules::Env;
-use crate::{fabric, http, java, modpack};
+use crate::{fabric, http, java, modpack, user_mods};
 
 /// Everything [`crate::launch`] needs.
 #[derive(Clone, Debug)]
@@ -83,6 +83,7 @@ pub async fn install(paths: &Paths, reporter: &Reporter) -> Result<Installed> {
 
     reporter.stage("Устанавливаем моды MineHouse");
     modpack::install(&client, paths, &manifest, reporter).await?;
+    user_mods::sync(&client, paths, &manifest, reporter).await;
 
     Ok(Installed {
         version,

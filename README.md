@@ -15,6 +15,7 @@ Minecraft, Fabric и сборки MineHouse, запуск сразу на `play.
 | Minecraft | `piston-meta.mojang.com`: клиент, библиотеки, ассеты, log4j-конфиг | `minecraft.rs` |
 | Fabric | Профиль с `meta.fabricmc.net`, сливается поверх ванильной версии | `fabric.rs` |
 | Сборка | `https://www.minehouse.pro/modpack/manifest.json` (sha512 каждого файла) | `modpack.rs` |
+| Свои моды | Modrinth API (Fabric + версия игры из manifest) и свои `.jar` | `user_mods.rs`, `modrinth.rs` |
 | Запуск | Аргументы из version JSON, `--quickPlayMultiplayer play.minehouse.pro` | `launch.rs` |
 | Онлайн | Server List Ping | `ping.rs` |
 
@@ -23,7 +24,29 @@ Minecraft, Fabric и сборки MineHouse, запуск сразу на `play.
 поменять `modpack/pack.json` в `minehouse-landing`. Каждый запуск сверяет
 файлы и докачивает только изменённые. Состояние сборки пишется в
 `config/minehouse-pack.json`, как у автообновления мода MineHouse Menu,
-поэтому они не мешают друг другу. Свои моды игрока не трогаются.
+поэтому они не мешают друг другу.
+
+## Свои моды
+
+Кнопка «Моды»: поиск на Modrinth (только Fabric под версию сборки, с
+обязательными зависимостями), свои `.jar` кнопкой или перетаскиванием в окно,
+включение/выключение (файл переименовывается в `.jar.disabled`), удаление,
+обновление. Моды лежат в той же `mods/`, но обновление сборки трогает только
+файлы из manifest, а список своих модов хранится в `user-mods.json`.
+
+Чтобы игрока пустило на сервер, перед установкой и перед каждым запуском лаунчер
+проверяет:
+
+- мод уже есть в сборке (по проекту Modrinth или Fabric id) → не ставит / выключает;
+- мод есть на сервере (`server_mods` в manifest, его пишет
+  `modpack/server-mods.json` в minehouse-landing) → ставит ровно серверную
+  версию, а мод с тем же Fabric id из другого проекта (FSit против FSit
+  Continued) не пускает;
+- мод только для сервера или требует серверную часть, которой у MineHouse нет → не ставит;
+- сменилась версия Minecraft → обновляет моды с Modrinth, а если версии нет, выключает.
+
+`mh-cli mods list|search|add|jar|rm|update|sync` делает то же без окна;
+`MINEHOUSE_MANIFEST_URL` подменяет manifest для проверки сборки до выкладки.
 
 Всё лежит в отдельной папке и не пересекается с другими лаунчерами:
 `%APPDATA%\MineHouse`, `~/Library/Application Support/MineHouse`,

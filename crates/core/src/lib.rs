@@ -13,11 +13,13 @@ pub mod java;
 pub mod launch;
 pub mod minecraft;
 pub mod modpack;
+pub mod modrinth;
 pub mod paths;
 pub mod ping;
 pub mod progress;
 pub mod rules;
 pub mod settings;
+pub mod user_mods;
 
 /// Where the launcher reads the modpack manifest from (built by
 /// `modpack/scripts/build.mjs` in P5ina/minehouse-landing).
