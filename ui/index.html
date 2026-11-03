@@ -46,6 +46,7 @@
     </div>
 
     <div class="actions">
+      <button id="mods-btn" class="secondary mods-btn" title="Свои моды">Моды</button>
       <button id="log-btn" class="icon" title="Журнал">≡</button>
       <button id="settings-btn" class="icon" title="Настройки">⚙</button>
       <button id="play" class="play">Войти</button>
@@ -80,6 +81,40 @@
     </div>
     <p id="version" class="muted small-text"></p>
     <form method="dialog" class="row end"><button id="settings-save">Готово</button></form>
+  </dialog>
+
+  <dialog id="mods" class="wide">
+    <div class="mods-head">
+      <h2>Моды</h2>
+      <div class="tabs">
+        <button class="tab active" data-tab="mine">Мои моды</button>
+        <button class="tab" data-tab="find">Найти на Modrinth</button>
+      </div>
+      <form method="dialog"><button class="ghost close" title="Закрыть">✕</button></form>
+    </div>
+    <p id="mods-msg" class="mods-msg" hidden></p>
+
+    <section id="tab-mine" class="tab-body">
+      <div class="row toolbar">
+        <button id="mods-add" class="secondary">Добавить .jar</button>
+        <button id="mods-dir" class="secondary">Открыть папку модов</button>
+        <button id="mods-update" class="secondary">Обновить моды</button>
+      </div>
+      <p class="muted small-text">Свои моды не стираются при обновлении сборки. Можно просто перетащить .jar в окно лаунчера.
+        Мод, который уже есть в сборке или нужен на сервере, лаунчер не поставит, а моды, которые есть на сервере, ставит той же версии.</p>
+      <ul id="mods-list" class="mod-list"></ul>
+      <p id="mods-empty" class="muted empty" hidden>Своих модов пока нет. Найдите их на Modrinth или добавьте .jar.</p>
+      <details class="pack-list">
+        <summary id="pack-summary">Моды сборки MineHouse</summary>
+        <ul id="pack-files"></ul>
+      </details>
+    </section>
+
+    <section id="tab-find" class="tab-body" hidden>
+      <input id="mods-q" type="search" placeholder="Поиск модов для Fabric" spellcheck="false" autocomplete="off">
+      <ul id="search-list" class="mod-list"></ul>
+      <div class="row center"><button id="search-more" class="secondary" hidden>Показать ещё</button></div>
+    </section>
   </dialog>
 
   <script src="main.js"></script>

@@ -1,7 +1,7 @@
 //! The MineHouse modpack from the site's `manifest.json`. Same files and the
 //! same `config/minehouse-pack.json` state as the in-game updater of the
 //! MineHouse Menu mod, so the two never fight. Mods the player added
-//! themselves are never touched.
+//! themselves are never touched (see [`crate::user_mods`]).
 
 use std::collections::HashSet;
 
@@ -23,6 +23,19 @@ pub struct Manifest {
     pub loader_version: Option<String>,
     #[serde(default)]
     pub server: Option<String>,
+    /// Modrinth mods on the server. A player who adds one of these gets
+    /// exactly this version, or the server won't let them in.
+    #[serde(default)]
+    pub server_mods: Vec<ServerMod>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ServerMod {
+    pub project: String,
+    pub version: String,
+    /// Fabric id of the server's jar: another project can ship the same id.
+    #[serde(default)]
+    pub mod_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -42,7 +55,10 @@ pub struct State {
 
 pub async fn fetch_manifest(client: &reqwest::Client, paths: &Paths) -> Result<Manifest> {
     let cache = paths.root.join("modpack-manifest.json");
-    http::get_json_cached(client, crate::MANIFEST_URL, &cache).await
+    // MINEHOUSE_MANIFEST_URL: try a pack build before it is on the site.
+    let url =
+        std::env::var("MINEHOUSE_MANIFEST_URL").unwrap_or_else(|_| crate::MANIFEST_URL.into());
+    http::get_json_cached(client, &url, &cache).await
 }
 
 fn state_path(paths: &Paths) -> std::path::PathBuf {

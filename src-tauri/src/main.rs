@@ -9,7 +9,8 @@ use minehouse_core::auth::{self, DeviceCode};
 use minehouse_core::paths::Paths;
 use minehouse_core::progress::{Event, Reporter};
 use minehouse_core::settings::Settings;
-use minehouse_core::{http, install, launch, ping};
+use minehouse_core::user_mods::{self, Pack};
+use minehouse_core::{http, install, launch, modpack, modrinth, ping};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
@@ -18,6 +19,21 @@ struct App {
     paths: Paths,
     client: http::ReqwestClient,
     busy: Mutex<()>,
+    /// Pack/server facts for the mod browser, from the last manifest fetch.
+    pack: Mutex<Option<Pack>>,
+}
+
+impl App {
+    async fn pack(&self, refresh: bool) -> Res<Pack> {
+        let mut cached = self.pack.lock().await;
+        if refresh || cached.is_none() {
+            let m = modpack::fetch_manifest(&self.client, &self.paths)
+                .await
+                .map_err(err)?;
+            *cached = Some(Pack::from_manifest(&m));
+        }
+        Ok(cached.clone().unwrap())
+    }
 }
 
 #[derive(Serialize)]
@@ -122,6 +138,159 @@ async fn open_game_dir(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
         .map_err(|e| e.to_string())
 }
 
+/// Changing `mods/` while the game runs (or installs) would break it, and
+/// Windows keeps the jars locked anyway.
+fn not_busy(app: &App) -> Res<tokio::sync::MutexGuard<'_, ()>> {
+    app.busy
+        .try_lock()
+        .map_err(|_| "Закройте игру, чтобы менять моды".to_string())
+}
+
+#[tauri::command]
+async fn mods_list(app: State<'_, Arc<App>>) -> Res<user_mods::Listing> {
+    let pack = app.pack(true).await?;
+    user_mods::list(&app.paths, &pack).map_err(err)
+}
+
+#[derive(Serialize)]
+struct SearchHit {
+    #[serde(flatten)]
+    hit: modrinth::SearchHit,
+    verdict: user_mods::Verdict,
+    reason: &'static str,
+    installed: bool,
+}
+
+#[derive(Serialize)]
+struct Search {
+    hits: Vec<SearchHit>,
+    total: u64,
+}
+
+#[tauri::command]
+async fn mods_search(app: State<'_, Arc<App>>, query: String, offset: u32) -> Res<Search> {
+    let pack = app.pack(false).await?;
+    // Browsing without a query: don't fill the first page with mods the pack already has.
+    let exclude: Vec<String> = if query.trim().is_empty() {
+        pack.projects.iter().cloned().collect()
+    } else {
+        Vec::new()
+    };
+    let (hits, total) = modrinth::search(&app.client, &query, &pack.minecraft, offset, &exclude)
+        .await
+        .map_err(err)?;
+    let installed: std::collections::HashSet<String> = user_mods::list(&app.paths, &pack)
+        .map_err(err)?
+        .mods
+        .into_iter()
+        .filter_map(|m| m.project)
+        .collect();
+    Ok(Search {
+        total,
+        hits: hits
+            .into_iter()
+            .map(|hit| {
+                let verdict = pack.verdict(&hit.project_id, &hit.client_side, &hit.server_side);
+                SearchHit {
+                    installed: installed.contains(&hit.project_id),
+                    reason: verdict.reason(),
+                    verdict,
+                    hit,
+                }
+            })
+            .collect(),
+    })
+}
+
+#[tauri::command]
+async fn mods_install(
+    app: State<'_, Arc<App>>,
+    project: String,
+    icon: Option<String>,
+) -> Res<Vec<String>> {
+    let _guard = not_busy(&app)?;
+    let pack = app.pack(false).await?;
+    user_mods::install_modrinth(&app.client, &app.paths, &pack, &project, icon)
+        .await
+        .map_err(err)
+}
+
+/// Adds the player's own jars (from the file picker or dropped on the window).
+/// Returns one line per file: what was added, or why not.
+#[tauri::command]
+async fn mods_add_files(app: State<'_, Arc<App>>, files: Vec<String>) -> Res<Vec<String>> {
+    let _guard = not_busy(&app)?;
+    let pack = app.pack(false).await?;
+    let mut out = Vec::new();
+    for f in files {
+        let path = std::path::PathBuf::from(&f);
+        out.push(
+            match user_mods::add_local(&app.client, &app.paths, &pack, &path).await {
+                Ok(title) => format!("Добавлен: {title}"),
+                Err(e) => format!("{e:#}"),
+            },
+        );
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+async fn mods_pick_files(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<Vec<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    handle
+        .dialog()
+        .file()
+        .set_title("Выберите моды")
+        .add_filter("Мод Fabric", &["jar"])
+        .pick_files(move |files| {
+            let _ = tx.send(files);
+        });
+    let Some(files) = rx.await.ok().flatten() else {
+        return Ok(Vec::new());
+    };
+    let files = files
+        .into_iter()
+        .filter_map(|f| f.into_path().ok())
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    mods_add_files(app, files).await
+}
+
+#[tauri::command]
+async fn mods_toggle(app: State<'_, Arc<App>>, file: String, enabled: bool) -> Res<()> {
+    let _guard = not_busy(&app)?;
+    let pack = app.pack(false).await?;
+    user_mods::set_enabled(&app.paths, &pack, &file, enabled).map_err(err)
+}
+
+#[tauri::command]
+async fn mods_remove(app: State<'_, Arc<App>>, file: String) -> Res<()> {
+    let _guard = not_busy(&app)?;
+    let pack = app.pack(false).await?;
+    user_mods::remove(&app.paths, &pack, &file).map_err(err)
+}
+
+#[tauri::command]
+async fn mods_update(app: State<'_, Arc<App>>) -> Res<Vec<String>> {
+    let _guard = not_busy(&app)?;
+    let pack = app.pack(true).await?;
+    user_mods::update_all(&app.client, &app.paths, &pack)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+async fn open_mods_dir(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = app.paths.game_dir().join("mods");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    handle
+        .opener()
+        .open_path(dir.to_string_lossy(), None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 /// Sign-in refresh → install/update → launch. Progress goes out as `progress` events.
 #[tauri::command]
 async fn play(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
@@ -176,8 +345,10 @@ fn main() {
         paths,
         client: http::client(),
         busy: Mutex::new(()),
+        pack: Mutex::new(None),
     });
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -191,6 +362,15 @@ fn main() {
             save_settings,
             open_url,
             open_game_dir,
+            open_mods_dir,
+            mods_list,
+            mods_search,
+            mods_install,
+            mods_add_files,
+            mods_pick_files,
+            mods_toggle,
+            mods_remove,
+            mods_update,
             play
         ])
         .run(tauri::generate_context!())
