@@ -10,10 +10,10 @@ command: minehouse-launcher
 finish-args:
   - --share=ipc
   - --share=network
-  # The launcher window is WebKitGTK (Wayland or X11), Minecraft itself
-  # (LWJGL/GLFW) needs X11, so XWayland is required even on Wayland.
+  # The launcher window (WebKitGTK) and Minecraft 26.x (LWJGL 3.4 / SDL3,
+  # built with Wayland support) both run natively on Wayland.
   - --socket=wayland
-  - --socket=x11
+  - --socket=fallback-x11
   - --device=dri
   # Game sound and the proximity voice chat microphone.
   - --socket=pulseaudio

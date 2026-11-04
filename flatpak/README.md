@@ -44,9 +44,8 @@ flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo
 
 ## Права
 
-- `--socket=x11` вместе с `--socket=wayland`: окно лаунчера работает на Wayland,
-  а сам Minecraft (LWJGL/GLFW) только на X11/XWayland. Линтер выдаёт на это
-  предупреждение, не ошибку.
+- `--socket=wayland` + `--socket=fallback-x11`: окно лаунчера (WebKitGTK) и Minecraft 26.x
+  (LWJGL 3.4 на SDL3, собран с Wayland) работают на Wayland, X11 только для X11-сессий.
 - `--device=dri` — OpenGL для игры, `--socket=pulseaudio` — звук и микрофон для голосового чата.
 - `--talk-name=org.freedesktop.secrets` — refresh-токен Microsoft в хранилище паролей.
 - `--filesystem=xdg-download:ro` — выбрать свои `.jar` из «Загрузок».
