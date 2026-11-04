@@ -90,8 +90,43 @@ Linux AppImage/deb), подписывает обновления ключом и
 лаунчер проверяет `releases/latest/download/latest.json` и предлагает обновиться.
 Публичный ключ записан в `src-tauri/tauri.conf.json`.
 
-Установщики не подписаны сертификатами Apple/Microsoft, поэтому при первом
-запуске SmartScreen/Gatekeeper предупредят. Подпись можно добавить позже.
+### Подпись macOS (Developer ID + нотаризация)
+
+Если в Settings → Secrets and variables → Actions заданы секреты ниже, релиз
+подписывает `MineHouse.app` сертификатом Developer ID, отправляет его на
+нотаризацию Apple, штампует тикет и проверяет результат (`codesign`, `spctl`,
+`stapler`), в том числе внутри архива обновления `MineHouse.app.tar.gz`.
+Архив обновления собирается уже из подписанного приложения и подписывается
+ключом Tauri как раньше, так что автообновление не меняется. Без секретов
+macOS-сборка остаётся неподписанной (в логе будет предупреждение).
+
+| Секрет | Что это |
+| --- | --- |
+| `APPLE_CERTIFICATE` | сертификат Developer ID Application с ключом, `.p12` в base64 |
+| `APPLE_CERTIFICATE_PASSWORD` | пароль, заданный при экспорте `.p12` |
+| `APPLE_SIGNING_IDENTITY` | `Developer ID Application: Имя (TEAMID)` |
+| `APPLE_ID` | email Apple ID аккаунта разработчика |
+| `APPLE_PASSWORD` | app-specific password с appleid.apple.com |
+| `APPLE_TEAM_ID` | Team ID (10 символов) |
+
+Вместо `APPLE_ID`/`APPLE_PASSWORD`/`APPLE_TEAM_ID` можно дать ключ App Store
+Connect API: `APPLE_API_KEY` (Key ID), `APPLE_API_ISSUER` (Issuer ID) и
+`APPLE_API_KEY_P8` (содержимое файла `AuthKey_XXXX.p8`). Если заданы оба
+варианта, используется ключ API.
+
+Как получить сертификат:
+
+1. На Mac: Связка ключей → Ассистент сертификации → Запросить сертификат у
+   бюро сертификации → «Сохранено на диске».
+2. <https://developer.apple.com/account/resources/certificates/add> →
+   **Developer ID Application** (профиль G2 Sub-CA) → загрузить запрос →
+   скачать `.cer` и открыть двойным кликом.
+3. В Связке ключей (вкладка «Мои сертификаты») экспортировать сертификат
+   вместе с ключом в `.p12` с паролем, затем `base64 -i cert.p12 | pbcopy`
+   и вставить в `APPLE_CERTIFICATE`.
+4. Точное имя для `APPLE_SIGNING_IDENTITY`: `security find-identity -v -p codesigning`.
+
+Windows-установщик пока не подписан, SmartScreen при первом запуске предупредит.
 
 ---
 
