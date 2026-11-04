@@ -5,6 +5,7 @@ App ID `pro.minehouse.launcher` (совпадает с `identifier` в `tauri.co
 | Файл | Что |
 | --- | --- |
 | `pro.minehouse.launcher.yml` | Манифест. Тот же файл лежит в `github.com/flathub/pro.minehouse.launcher` |
+| `flathub.json` | Только x86_64: Linux-релиз собирается только под него |
 | `pro.minehouse.launcher.metainfo.xml` | AppStream: описание, скриншоты, история версий. Попадает в `.deb` (`bundle.linux.deb.files`), оттуда во Flatpak |
 | `../docs/screenshots/` | Скриншоты для Flathub, ссылки в metainfo на тег версии |
 

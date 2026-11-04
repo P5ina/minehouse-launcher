@@ -28,7 +28,7 @@ modules:
       - type: file
         dest-filename: minehouse-launcher.deb
         url: https://github.com/P5ina/minehouse-launcher/releases/download/v0.3.1/MineHouse_0.3.1_amd64.deb
-        sha256: '0000000000000000000000000000000000000000000000000000000000000000'  # filled in after the v0.3.1 release
+        sha256: 366b55f7a1fc4db3a9c86693e0715f7382fe5c79ac1cfc65528ab839091999d2
         only-arches: [x86_64]
         x-checker-data:
           type: json
