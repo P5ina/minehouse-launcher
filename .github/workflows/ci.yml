@@ -67,3 +67,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # No signing key on PRs: build the app without updater artifacts.
       - run: pnpm tauri build --no-bundle ${{ matrix.args }} --config src-tauri/tauri.ci.conf.json
+      # Готовый исполняемый файл для проверки PR: вкладка Summary → Artifacts.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minehouse-launcher-${{ matrix.name }}
+          path: |
+            target/release/minehouse-launcher
+            target/release/minehouse-launcher.exe
+            target/*/release/minehouse-launcher
+          if-no-files-found: error
