@@ -14,7 +14,7 @@ flatpak update   # обновления
 | --- | --- |
 | `pro.minehouse.launcher.yml` | Манифест: перепаковывает `.deb` релиза (так советует Tauri), рантайм `org.gnome.Platform` (с WebKitGTK 4.1) с Flathub |
 | `pro.minehouse.launcher.metainfo.xml` | AppStream: описание, скриншоты, история версий. Попадает в `.deb` (`bundle.linux.deb.files`), оттуда во Flatpak |
-| `publish.sh` | Сборка + подписанный OSTree-репозиторий, `.flatpakref`, `.flatpakrepo`, `.flatpak`-бандл, `index.html` |
+| `publish.sh` | Сборка + подписанный OSTree-репозиторий, `.flatpakref`, `.flatpakrepo`, `.flatpak`-бандл (помнит наш репозиторий, обновляется сам), `index.html` |
 | `minehouse-flatpak.asc` | Публичный GPG-ключ репозитория (он же зашит в `.flatpakref`) |
 | `../.github/workflows/flatpak.yml` | После каждого успешного Release: `publish.sh` → GitHub Pages, бандл в релиз |
 

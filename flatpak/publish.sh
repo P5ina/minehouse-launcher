@@ -43,8 +43,13 @@ flatpak build-update-repo \
   --prune \
   "$out/repo"
 
+# --repo-url + --gpg-keys: a bundle opened from the site keeps updating from
+# our repository with `flatpak update` / the software center.
+gpg --export "$key" > "$work/key.gpg"
 flatpak build-bundle \
   --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+  --repo-url="$site/repo/" \
+  --gpg-keys="$work/key.gpg" \
   --gpg-sign="$key" \
   "$out/repo" "$out/MineHouse_${version}_x86_64.flatpak" "$app" stable
 
