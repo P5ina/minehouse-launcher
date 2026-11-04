@@ -3,6 +3,7 @@ import { useState } from "react"
 import { BottomBar } from "@/components/launcher/bottom-bar"
 import { DropOverlay } from "@/components/launcher/drop-overlay"
 import { Hero } from "@/components/launcher/hero"
+import { NewsStrip } from "@/components/launcher/news-strip"
 import { LogPanel } from "@/components/launcher/log-panel"
 import { LoginDialog } from "@/components/launcher/login-dialog"
 import { ModsDialog, type ModsTab } from "@/components/launcher/mods-dialog"
@@ -35,7 +36,7 @@ export function App() {
         <TopBar onLog={l.pushLog} />
         <main className="relative isolate flex min-h-0 flex-1 flex-col">
           <Hero server={l.server} paused={l.playing} compact={showLog} />
-          {showLog && <LogPanel lines={l.log} />}
+          {showLog ? <LogPanel lines={l.log} /> : <NewsStrip />}
         </main>
         <BottomBar
           info={l.info}
@@ -47,6 +48,8 @@ export function App() {
           onMods={() => setMods({ open: true, tab: "mine", dropped: [] })}
           onLog={() => setShowLog((v) => !v)}
           onSettings={() => setSettingsOpen(true)}
+          onLogin={() => setLoginOpen(true)}
+          onChanged={l.refresh}
         />
       </div>
 

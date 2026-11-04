@@ -12,6 +12,10 @@ pub struct Settings {
     pub extra_jvm_args: String,
     /// Close the launcher window once the game window is up.
     pub close_on_launch: bool,
+    /// Offline nicknames (alts) of the licensed Microsoft account.
+    pub offline_profiles: Vec<String>,
+    /// Nick from `offline_profiles` to play as; `None` = the Microsoft account.
+    pub active_profile: Option<String>,
 }
 
 impl Default for Settings {
@@ -20,6 +24,8 @@ impl Default for Settings {
             memory_mb: 4096,
             extra_jvm_args: String::new(),
             close_on_launch: false,
+            offline_profiles: Vec::new(),
+            active_profile: None,
         }
     }
 }

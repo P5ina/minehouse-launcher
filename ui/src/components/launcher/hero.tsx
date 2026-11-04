@@ -70,7 +70,7 @@ export function Hero({
           text="MINEHOUSE"
           trigger="mount"
           direction="center"
-          fontSize={compact ? "3rem" : "clamp(3.5rem, 12vw, 7.5rem)"}
+          fontSize={compact ? "3rem" : "clamp(3.5rem, 10vw, 6.5rem)"}
           fontWeight={700}
           letterSpacing="-0.04em"
           lineHeight={1}

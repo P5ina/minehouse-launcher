@@ -1,10 +1,12 @@
-import { Loader2, Package, Play, ScrollText, Settings, UserRound } from "lucide-react"
+import { Loader2, Package, Play, ScrollText, Settings } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { Info } from "@/lib/api"
 import { cn } from "@/lib/utils"
+
+import { AccountMenu } from "./account-menu"
 
 function IconButton({
   label,
@@ -48,6 +50,8 @@ export function BottomBar({
   onMods,
   onLog,
   onSettings,
+  onLogin,
+  onChanged,
 }: {
   info: Info | null
   playing: boolean
@@ -58,30 +62,13 @@ export function BottomBar({
   onMods: () => void
   onLog: () => void
   onSettings: () => void
+  onLogin: () => void
+  onChanged: () => Promise<void>
 }) {
   const acc = info?.account
   return (
     <footer className="relative z-10 flex shrink-0 items-center gap-5 border-t bg-background/80 px-5 py-3.5 backdrop-blur">
-      <div className="flex w-52 min-w-0 items-center gap-3">
-        <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted">
-          {acc ? (
-            <img
-              src={`https://mc-heads.net/avatar/${acc.uuid}/40`}
-              alt=""
-              className="size-full [image-rendering:pixelated]"
-              draggable={false}
-            />
-          ) : (
-            <UserRound className="size-5 text-muted-foreground" />
-          )}
-        </div>
-        <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-medium">{acc ? acc.name : "Не выполнен вход"}</span>
-          <span className="truncate text-xs text-muted-foreground">
-            {info?.pack_version ? `Сборка ${info.pack_version}` : "Сборка не установлена"}
-          </span>
-        </div>
-      </div>
+      <AccountMenu info={info} disabled={playing} onLogin={onLogin} onChanged={onChanged} />
 
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <span className="h-4 truncate text-xs text-muted-foreground">{stage}</span>

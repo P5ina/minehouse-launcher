@@ -110,7 +110,68 @@ async fn logout(app: State<'_, Arc<App>>) -> Res<()> {
 async fn save_settings(app: State<'_, Arc<App>>, settings: Settings) -> Res<()> {
     let mut s = settings;
     s.memory_mb = s.memory_mb.clamp(1024, 32768);
+    // Alts are changed only by the profile_* commands.
+    let stored = Settings::load(&app.paths);
+    s.offline_profiles = stored.offline_profiles;
+    s.active_profile = stored.active_profile;
     s.save(&app.paths).map_err(err)
+}
+
+/// Adds an offline profile (alt). Only with a signed-in Microsoft account:
+/// playing as an alt is for players who own the game, as in Prism Launcher.
+#[tauri::command]
+async fn profile_add(app: State<'_, Arc<App>>, name: String) -> Res<()> {
+    let name = name.trim().to_string();
+    let main = account::load(&app.paths)
+        .ok_or("Твинков можно добавить только после входа через Microsoft")?;
+    if !auth::valid_nickname(&name) {
+        return Err("Ник: от 3 до 16 латинских букв, цифр или _".into());
+    }
+    let mut s = Settings::load(&app.paths);
+    let taken = |n: &str| n.eq_ignore_ascii_case(&name);
+    if taken(&main.session.name) || s.offline_profiles.iter().any(|n| taken(n)) {
+        return Err("Такой ник уже есть".into());
+    }
+    s.offline_profiles.push(name.clone());
+    s.active_profile = Some(name);
+    s.save(&app.paths).map_err(err)
+}
+
+#[tauri::command]
+async fn profile_remove(app: State<'_, Arc<App>>, name: String) -> Res<()> {
+    let mut s = Settings::load(&app.paths);
+    s.offline_profiles.retain(|n| n != &name);
+    if s.active_profile.as_deref() == Some(name.as_str()) {
+        s.active_profile = None;
+    }
+    s.save(&app.paths).map_err(err)
+}
+
+/// `None` = play as the Microsoft account.
+#[tauri::command]
+async fn profile_select(app: State<'_, Arc<App>>, name: Option<String>) -> Res<()> {
+    let mut s = Settings::load(&app.paths);
+    if let Some(n) = &name {
+        if !s.offline_profiles.contains(n) {
+            return Err("Нет такого твинка".into());
+        }
+    }
+    s.active_profile = name;
+    s.save(&app.paths).map_err(err)
+}
+
+/// Latest posts from www.minehouse.pro/news for the home screen.
+#[tauri::command]
+async fn news(app: State<'_, Arc<App>>) -> Res<serde_json::Value> {
+    let url = format!("{}/api/news?limit=6", minehouse_core::SITE);
+    let res = app
+        .client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let res = res.error_for_status().map_err(|e| e.to_string())?;
+    res.json().await.map_err(|e| e.to_string())
 }
 
 /// Opens an https link in the default browser. Done on the Rust side so the
@@ -305,11 +366,20 @@ async fn play(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
 
     reporter.stage("Входим в аккаунт");
     let stored = account::load(&app.paths).ok_or("Сначала войдите через Microsoft")?;
+    // Refreshing the Microsoft account also proves the game is owned: it fails
+    // without a Minecraft profile. Alts are only launched after that.
     let account = auth::refresh(&app.client, &stored).await.map_err(err)?;
     account::save(&app.paths, &account).map_err(err)?;
 
     let installed = install::install(&app.paths, &reporter).await.map_err(err)?;
     let settings = Settings::load(&app.paths);
+    let session = match &settings.active_profile {
+        Some(alt) if settings.offline_profiles.contains(alt) => {
+            reporter.log(format!("Играем за твинка {alt} (офлайн-профиль)"));
+            auth::offline_session(alt)
+        }
+        _ => account.session.clone(),
+    };
 
     reporter.stage("Игра запущена");
     let _ = handle.emit("game", "started");
@@ -318,15 +388,9 @@ async fn play(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
             let _ = w.hide();
         }
     }
-    let status = launch::launch(
-        &app.paths,
-        &installed,
-        &account.session,
-        &settings,
-        &reporter,
-    )
-    .await
-    .map_err(err)?;
+    let status = launch::launch(&app.paths, &installed, &session, &settings, &reporter)
+        .await
+        .map_err(err)?;
     if let Some(w) = handle.get_webview_window("main") {
         let _ = w.show();
     }
@@ -360,6 +424,10 @@ fn main() {
             login_finish,
             logout,
             save_settings,
+            profile_add,
+            profile_remove,
+            profile_select,
+            news,
             open_url,
             open_game_dir,
             open_mods_dir,
