@@ -49,7 +49,7 @@ struct Info {
     settings: Settings,
     pack_version: Option<String>,
     game_dir: String,
-    /// False inside Flatpak: Flathub ships the updates there.
+    /// False inside Flatpak: `flatpak update` ships the updates there.
     self_update: bool,
 }
 
@@ -445,7 +445,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init());
-    // The Flatpak build is updated by Flathub; replacing files inside the
+    // The Flatpak build is updated by `flatpak update`; replacing files inside the
     // sandbox would not work anyway.
     if !in_flatpak() {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());

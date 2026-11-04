@@ -69,7 +69,7 @@ cargo run -p minehouse-core --bin mh-cli -- install   # скачать и про
 для одного `cargo build`/`clippy` сначала нужен `pnpm build`.
 
 Linux: нужны `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`.
-Flatpak-сборка и публикация на Flathub: [`flatpak/README.md`](flatpak/README.md).
+Flatpak (свой репозиторий на GitHub Pages): [`flatpak/README.md`](flatpak/README.md).
 
 ## Вход через Microsoft: настройка один раз
 
