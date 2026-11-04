@@ -298,11 +298,56 @@ export function ModsDialog({
                 ))}
               </ul>
 
+              {listing && listing.options.length > 0 && (
+                <div className="mt-5 flex flex-col gap-2">
+                  <div>
+                    <h3 className="text-sm font-medium">Моды сборки MineHouse</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Их можно выключить, тогда обновление сборки их не вернёт. Вместо выключенного можно
+                      поставить свою версию. Обязательные моды (наши, Polymer, голосовой чат, пинги) не выключаются.
+                    </p>
+                  </div>
+                  <ul className="grid gap-1.5 sm:grid-cols-2">
+                    {listing.options.map((o) => (
+                      <li
+                        key={o.id}
+                        className={cn(
+                          "flex items-center gap-3 rounded-lg border bg-card/50 px-3 py-2 transition-opacity",
+                          (!o.enabled || o.missing.length > 0) && "opacity-60"
+                        )}
+                      >
+                        <div className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate text-sm font-medium">{o.name}</span>
+                          <span className="truncate text-xs text-muted-foreground" title={o.why ?? undefined}>
+                            {o.enabled && o.missing.length > 0 ? `Не работает без: ${o.missing.join(", ")}` : o.why}
+                          </span>
+                        </div>
+                        <Switch
+                          checked={o.enabled}
+                          aria-label={o.enabled ? "Выключить" : "Включить"}
+                          disabled={busy}
+                          onCheckedChange={(enabled) =>
+                            action(async () => {
+                              try {
+                                await invoke("mods_pack_option", { id: o.id, enabled })
+                                setMsg(null)
+                              } finally {
+                                await load()
+                              }
+                            })
+                          }
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {listing && (
                 <details className="group mt-4 text-sm text-muted-foreground">
                   <summary className="flex cursor-pointer list-none items-center gap-1.5 hover:text-foreground">
                     <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
-                    Моды сборки MineHouse, Minecraft {listing.minecraft} ({listing.pack.length}), их ставить не нужно
+                    Установленные файлы сборки, Minecraft {listing.minecraft} ({listing.pack.length})
                   </summary>
                   <ul className="mt-2 columns-2 gap-6 pl-6 text-xs">
                     {listing.pack.map((f) => (

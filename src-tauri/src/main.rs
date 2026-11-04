@@ -19,20 +19,25 @@ struct App {
     paths: Paths,
     client: http::ReqwestClient,
     busy: Mutex<()>,
-    /// Pack/server facts for the mod browser, from the last manifest fetch.
-    pack: Mutex<Option<Pack>>,
+    /// The last manifest fetch, for the mod browser.
+    manifest: Mutex<Option<modpack::Manifest>>,
 }
 
 impl App {
-    async fn pack(&self, refresh: bool) -> Res<Pack> {
-        let mut cached = self.pack.lock().await;
+    async fn manifest(&self, refresh: bool) -> Res<modpack::Manifest> {
+        let mut cached = self.manifest.lock().await;
         if refresh || cached.is_none() {
             let m = modpack::fetch_manifest(&self.client, &self.paths)
                 .await
                 .map_err(err)?;
-            *cached = Some(Pack::from_manifest(&m));
+            *cached = Some(m);
         }
         Ok(cached.clone().unwrap())
+    }
+
+    /// Pack/server facts with the player's choice of optional mods.
+    async fn pack(&self, refresh: bool) -> Res<Pack> {
+        Ok(Pack::load(&self.manifest(refresh).await?, &self.paths))
     }
 }
 
@@ -333,6 +338,23 @@ async fn mods_toggle(app: State<'_, Arc<App>>, file: String, enabled: bool) -> R
     user_mods::set_enabled(&app.paths, &pack, &file, enabled).map_err(err)
 }
 
+/// Turns an optional mod of the pack on or off (downloads or removes it now).
+#[tauri::command]
+async fn mods_pack_option(app: State<'_, Arc<App>>, id: String, enabled: bool) -> Res<()> {
+    let _guard = not_busy(&app)?;
+    let manifest = app.manifest(false).await?;
+    user_mods::set_pack_option(
+        &app.client,
+        &app.paths,
+        &manifest,
+        &id,
+        enabled,
+        &Reporter::silent(),
+    )
+    .await
+    .map_err(err)
+}
+
 #[tauri::command]
 async fn mods_remove(app: State<'_, Arc<App>>, file: String) -> Res<()> {
     let _guard = not_busy(&app)?;
@@ -417,7 +439,7 @@ fn main() {
         paths,
         client: http::client(),
         busy: Mutex::new(()),
-        pack: Mutex::new(None),
+        manifest: Mutex::new(None),
     });
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -450,6 +472,7 @@ fn main() {
             mods_add_files,
             mods_pick_files,
             mods_toggle,
+            mods_pack_option,
             mods_remove,
             mods_update,
             play

@@ -43,7 +43,9 @@ export type UserMod = {
   required_by?: string[]
 }
 
-export type ModListing = { mods: UserMod[]; pack: string[]; minecraft: string }
+/** An optional mod of the MineHouse pack; the player turns it on or off. */
+export type PackChoice = { id: string; name: string; why?: string | null; enabled: boolean; missing: string[] }
+export type ModListing = { mods: UserMod[]; pack: string[]; options: PackChoice[]; minecraft: string }
 
 export type SearchHit = {
   project_id: string

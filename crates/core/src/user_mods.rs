@@ -15,7 +15,7 @@
 //!   server's version is installed (an old client FSit once broke joining);
 //! - server-only, or needs a server part MineHouse doesn't have → refused.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -102,10 +102,38 @@ pub struct Pack {
     pub server: HashMap<String, String>,
     /// Fabric id of a server mod → its Modrinth version.
     pub server_ids: HashMap<String, String>,
+    /// Optional pack mods and the player's choice.
+    pub options: Vec<PackChoice>,
+}
+
+/// An optional pack mod as the «Моды» window shows it.
+#[derive(Clone, Debug, Serialize)]
+pub struct PackChoice {
+    pub id: String,
+    pub name: String,
+    pub why: Option<String>,
+    /// The player wants it (not turned off).
+    pub enabled: bool,
+    /// Names of turned-off options it can't run without.
+    pub missing: Vec<String>,
+    /// Modrinth project of its file.
+    #[serde(skip)]
+    pub project: Option<String>,
 }
 
 impl Pack {
+    /// Everything in the manifest (as if no optional mod were off).
     pub fn from_manifest(m: &Manifest) -> Self {
+        Self::chosen(m, &BTreeSet::new())
+    }
+
+    /// The pack with the player's choice: turned-off mods are not part of it,
+    /// so the player may install their own version.
+    pub fn load(m: &Manifest, paths: &Paths) -> Self {
+        Self::chosen(m, &crate::modpack::disabled(paths))
+    }
+
+    pub fn chosen(m: &Manifest, disabled: &BTreeSet<String>) -> Self {
         let mut pack = Pack {
             minecraft: m
                 .minecraft
@@ -113,7 +141,30 @@ impl Pack {
                 .unwrap_or_else(|| crate::DEFAULT_MINECRAFT.into()),
             ..Default::default()
         };
-        for f in &m.files {
+        let on = m.enabled(disabled);
+        let names: HashMap<&str, &str> = m
+            .options
+            .iter()
+            .map(|o| (o.id.as_str(), o.name.as_str()))
+            .collect();
+        pack.options = m
+            .options
+            .iter()
+            .map(|o| PackChoice {
+                id: o.id.clone(),
+                name: o.name.clone(),
+                why: o.why.clone(),
+                enabled: !disabled.contains(&o.id),
+                missing: o
+                    .requires
+                    .iter()
+                    .filter(|r| !on.contains(*r))
+                    .map(|r| names.get(r.as_str()).copied().unwrap_or(r).to_string())
+                    .collect(),
+                project: m.main_file(&o.id).and_then(|f| modrinth_project_of(&f.url)),
+            })
+            .collect();
+        for f in m.wanted(disabled) {
             if let Some(name) = f.path.strip_prefix("mods/") {
                 pack.files.insert(name.to_string());
             }
@@ -327,8 +378,10 @@ fn reconcile(paths: &Paths, pack: &Pack) -> Result<Index> {
 pub struct Listing {
     pub minecraft: String,
     pub mods: Vec<UserMod>,
-    /// File names of the pack's own mods, for the read-only list.
+    /// File names of the pack's mods as installed, for the read-only list.
     pub pack: Vec<String>,
+    /// Optional pack mods with on/off switches.
+    pub options: Vec<PackChoice>,
 }
 
 pub fn list(paths: &Paths, pack: &Pack) -> Result<Listing> {
@@ -339,6 +392,7 @@ pub fn list(paths: &Paths, pack: &Pack) -> Result<Listing> {
         minecraft: pack.minecraft.clone(),
         mods: index.mods,
         pack: files,
+        options: pack.options.clone(),
     })
 }
 
@@ -748,6 +802,58 @@ fn disable(paths: &Paths, m: &mut UserMod, note: String, reporter: &Reporter) {
     m.note = Some(note);
 }
 
+/// Turns an optional pack mod on or off and applies it right away: downloads
+/// what is now needed, removes what is not (the game must not be running).
+pub async fn set_pack_option(
+    client: &reqwest::Client,
+    paths: &Paths,
+    manifest: &Manifest,
+    id: &str,
+    enabled: bool,
+    reporter: &Reporter,
+) -> Result<()> {
+    let Some(option) = manifest.options.iter().find(|o| o.id == id) else {
+        bail!("в сборке нет необязательного мода {id}");
+    };
+    if enabled {
+        let pack = Pack::load(manifest, paths);
+        let project = pack
+            .options
+            .iter()
+            .find(|o| o.id == id)
+            .and_then(|o| o.project.clone());
+        let index = reconcile(paths, &pack)?;
+        if let Some(own) = index
+            .mods
+            .iter()
+            .find(|m| m.enabled && project.is_some() && m.project == project)
+        {
+            bail!(
+                "Сначала выключите или удалите свою версию «{}», иначе будет два одинаковых мода",
+                own.title
+            );
+        }
+    }
+    let mut disabled = crate::modpack::disabled(paths);
+    if enabled {
+        disabled.remove(id);
+    } else {
+        disabled.insert(id.to_string());
+    }
+    crate::modpack::set_disabled(paths, disabled)?;
+    crate::modpack::install(client, paths, manifest, reporter).await?;
+    reporter.log(format!(
+        "{} «{}»",
+        if enabled {
+            "Включён мод сборки"
+        } else {
+            "Выключен мод сборки"
+        },
+        option.name
+    ));
+    Ok(())
+}
+
 /// Runs before every launch, after the pack is installed: turns off player
 /// mods that would now clash with the pack or the server and moves Modrinth
 /// mods to the server's version or to a new Minecraft. Never fails the launch.
@@ -768,7 +874,7 @@ async fn sync_inner(
     manifest: &Manifest,
     reporter: &Reporter,
 ) -> Result<()> {
-    let pack = Pack::from_manifest(manifest);
+    let pack = Pack::load(manifest, paths);
     let mut index = reconcile(paths, &pack)?;
     if !index.mods.iter().any(|m| m.enabled) {
         return Ok(());
@@ -863,7 +969,10 @@ mod tests {
                 url: "https://cdn.modrinth.com/data/P7dR8mSH/versions/x/fabric-api.jar".into(),
                 sha512: String::new(),
                 size: 0,
+                mod_slug: Some("fabric-api".into()),
+                choices: None,
             }],
+            options: vec![],
             minecraft: Some("26.3".into()),
             loader_version: None,
             server: None,
