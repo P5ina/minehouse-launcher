@@ -62,6 +62,12 @@ cargo test --workspace
 cargo run -p minehouse-core --bin mh-cli -- install   # скачать и проверить всё без окна
 ```
 
+Интерфейс (`ui/`) на React + Vite + Tailwind и компонентах shadcn/ui в той же теме,
+что сайт (zinc, Geist). Фоновые эффекты из React Bits Pro лежат в
+`ui/src/components/react-bits`. Новые компоненты: `pnpm exec shadcn add <имя>`.
+`pnpm tauri dev` сам запускает Vite, `pnpm tauri build` собирает `ui/dist`;
+для одного `cargo build`/`clippy` сначала нужен `pnpm build`.
+
 Linux: нужны `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`.
 
 ## Вход через Microsoft: настройка один раз
