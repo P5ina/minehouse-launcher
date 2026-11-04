@@ -28,13 +28,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "nsis",
-      "dmg",
-      "app",
-      "appimage",
-      "deb"
-    ],
+    "targets": ["nsis", "dmg", "app", "appimage", "deb"],
     "createUpdaterArtifacts": true,
     "category": "Game",
     "shortDescription": "Лаунчер сервера MineHouse",
@@ -57,10 +51,7 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "languages": [
-          "Russian",
-          "English"
-        ]
+        "languages": ["Russian", "English"]
       }
     }
   },
