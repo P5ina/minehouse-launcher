@@ -32,7 +32,7 @@ export function App() {
   return (
     <TooltipProvider delay={300}>
       <div className="relative flex h-full flex-col">
-        <UpdateBanner />
+        <UpdateBanner enabled={l.info?.self_update ?? false} />
         <TopBar onLog={l.pushLog} />
         <main className="relative isolate flex min-h-0 flex-1 flex-col">
           <Hero server={l.server} paused={l.playing} compact={showLog} />

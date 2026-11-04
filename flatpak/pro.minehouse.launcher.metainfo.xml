@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 MineHouse -->
+<component type="desktop-application">
+  <id>pro.minehouse.launcher</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>MineHouse</name>
+  <summary>Launcher for the MineHouse Minecraft server</summary>
+  <summary xml:lang="ru">Лаунчер Minecraft-сервера MineHouse</summary>
+
+  <developer id="pro.minehouse">
+    <name>MineHouse</name>
+  </developer>
+
+  <description>
+    <p>
+      One button to play on MineHouse, a vanilla-plus survival Minecraft server.
+      The launcher signs you in with your Microsoft account, installs Java,
+      Minecraft, Fabric and the MineHouse modpack, keeps them up to date and
+      starts the game straight on the server.
+    </p>
+    <p xml:lang="ru">
+      Одна кнопка, чтобы играть на MineHouse — сервере ванильного выживания
+      с небольшими улучшениями. Лаунчер входит через аккаунт Microsoft, ставит
+      Java, Minecraft, Fabric и сборку MineHouse, обновляет их и запускает игру
+      сразу на сервере.
+    </p>
+    <ul>
+      <li>Sign-in with Microsoft, a Minecraft: Java Edition license is required</li>
+      <li xml:lang="ru">Вход через Microsoft, нужна лицензия Minecraft: Java Edition</li>
+      <li>Downloads only changed files, checked against SHA-512 sums</li>
+      <li xml:lang="ru">Скачивает только изменённые файлы и сверяет их по SHA-512</li>
+      <li>Your own mods from Modrinth or local .jar files, checked against the server</li>
+      <li xml:lang="ru">Свои моды с Modrinth или из .jar, с проверкой на совместимость с сервером</li>
+      <li>Server online status and news</li>
+      <li xml:lang="ru">Онлайн сервера и новости</li>
+    </ul>
+    <p>
+      NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.
+    </p>
+    <p xml:lang="ru">
+      Не является официальным продуктом Minecraft. Не одобрено Mojang или Microsoft и не связано с ними.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">pro.minehouse.launcher.desktop</launchable>
+
+  <url type="homepage">https://www.minehouse.pro</url>
+  <url type="bugtracker">https://github.com/P5ina/minehouse-launcher/issues</url>
+  <url type="vcs-browser">https://github.com/P5ina/minehouse-launcher</url>
+  <url type="contact">https://discord.gg/gCYGxDzaCb</url>
+
+  <categories>
+    <category>Game</category>
+  </categories>
+  <keywords>
+    <keyword>minecraft</keyword>
+    <keyword>launcher</keyword>
+    <keyword>fabric</keyword>
+    <keyword>modpack</keyword>
+  </keywords>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#e4e4e7</color>
+    <color type="primary" scheme_preference="dark">#18181b</color>
+  </branding>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Home screen with the server status</caption>
+      <image>https://raw.githubusercontent.com/P5ina/minehouse-launcher/v0.3.1/docs/screenshots/home.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Installing mods from Modrinth</caption>
+      <image>https://raw.githubusercontent.com/P5ina/minehouse-launcher/v0.3.1/docs/screenshots/mods-find.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Settings</caption>
+      <image>https://raw.githubusercontent.com/P5ina/minehouse-launcher/v0.3.1/docs/screenshots/settings.png</image>
+    </screenshot>
+  </screenshots>
+
+  <requires>
+    <display_length compare="ge">760</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <internet>always</internet>
+  </supports>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="violence-cartoon">mild</content_attribute>
+    <content_attribute id="violence-fantasy">mild</content_attribute>
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-audio">intense</content_attribute>
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
+
+  <releases>
+    <release version="0.3.1" date="2026-11-04">
+      <description>
+        <p>Flatpak package. Inside Flatpak the launcher is updated by Flathub.</p>
+      </description>
+    </release>
+    <release version="0.3.0" date="2026-11-04">
+      <description>
+        <p>New look, server news on the home screen, extra offline profiles for license owners.</p>
+      </description>
+    </release>
+    <release version="0.2.0" date="2026-11-03">
+      <description>
+        <p>Own mods: Modrinth search, local .jar files, checks against the modpack and the server.</p>
+      </description>
+    </release>
+    <release version="0.1.1" date="2026-10-31">
+      <description>
+        <p>Server address with port, links now open in the browser.</p>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-10-31">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

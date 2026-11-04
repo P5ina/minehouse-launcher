@@ -44,6 +44,13 @@ struct Info {
     settings: Settings,
     pack_version: Option<String>,
     game_dir: String,
+    /// False inside Flatpak: Flathub ships the updates there.
+    self_update: bool,
+}
+
+/// Flatpak sets `FLATPAK_ID` and mounts `/.flatpak-info` in every sandbox.
+fn in_flatpak() -> bool {
+    std::env::var_os("FLATPAK_ID").is_some() || std::path::Path::new("/.flatpak-info").exists()
 }
 
 #[derive(Serialize)]
@@ -73,6 +80,7 @@ async fn info(app: State<'_, Arc<App>>) -> Res<Info> {
             .await
             .map(|s| s.version),
         game_dir: app.paths.game_dir().to_string_lossy().into_owned(),
+        self_update: !in_flatpak(),
     })
 }
 
@@ -411,11 +419,16 @@ fn main() {
         busy: Mutex::new(()),
         pack: Mutex::new(None),
     });
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
+    // The Flatpak build is updated by Flathub; replacing files inside the
+    // sandbox would not work anyway.
+    if !in_flatpak() {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+    builder
         .manage(app)
         .invoke_handler(tauri::generate_handler![
             info,
