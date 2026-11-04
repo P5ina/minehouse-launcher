@@ -1,7 +1,7 @@
-# Flatpak build of the launcher, the same file goes to github.com/flathub/pro.minehouse.launcher.
-# It repackages the .deb from the GitHub release (Tauri's recommended way),
-# x-checker-data lets Flathub's bot open a PR for every new release.
-# Local build: see flatpak/README.md.
+# Flatpak build of the launcher, published to our own repository on GitHub Pages
+# by .github/workflows/flatpak.yml after every release (see flatpak/README.md).
+# It repackages the release .deb (Tauri's recommended way); publish.sh puts it
+# next to this file as minehouse-launcher.deb before building.
 id: pro.minehouse.launcher
 runtime: org.gnome.Platform
 runtime-version: '51'
@@ -26,15 +26,8 @@ modules:
     buildsystem: simple
     sources:
       - type: file
-        dest-filename: minehouse-launcher.deb
-        url: https://github.com/P5ina/minehouse-launcher/releases/download/v0.3.1/MineHouse_0.3.1_amd64.deb
-        sha256: 366b55f7a1fc4db3a9c86693e0715f7382fe5c79ac1cfc65528ab839091999d2
+        path: minehouse-launcher.deb
         only-arches: [x86_64]
-        x-checker-data:
-          type: json
-          url: https://api.github.com/repos/P5ina/minehouse-launcher/releases/latest
-          version-query: .tag_name | sub("^v"; "")
-          url-query: '"https://github.com/P5ina/minehouse-launcher/releases/download/v" + $version + "/MineHouse_" + $version + "_amd64.deb"'
     build-commands:
       - ar -x minehouse-launcher.deb
       - tar -xf data.tar.gz

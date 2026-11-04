@@ -6,7 +6,7 @@ import { Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 // Полоса сверху, если на GitHub вышла новая версия лаунчера.
-// enabled=false во Flatpak: там лаунчер обновляет Flathub.
+// enabled=false во Flatpak: там лаунчер обновляет flatpak update.
 export function UpdateBanner({ enabled }: { enabled: boolean }) {
   const [update, setUpdate] = useState<Update | null>(null)
   const [busy, setBusy] = useState(false)

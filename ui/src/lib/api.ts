@@ -20,7 +20,7 @@ export type Info = {
   pack_version: string | null
   login_configured: boolean
   settings: Settings
-  /** false in Flatpak: updates come from Flathub */
+  /** false in Flatpak: updates come from flatpak update */
   self_update: boolean
 }
 
