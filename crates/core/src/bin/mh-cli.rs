@@ -75,7 +75,7 @@ async fn main() -> Result<()> {
 async fn mods(paths: &Paths) -> Result<()> {
     let client = http::client();
     let manifest = modpack::fetch_manifest(&client, paths).await?;
-    let pack = user_mods::Pack::from_manifest(&manifest);
+    let pack = user_mods::Pack::load(&manifest, paths);
     let args: Vec<String> = std::env::args().skip(2).collect();
     let arg = |i: usize| args.get(i).cloned().unwrap_or_default();
     match arg(0).as_str() {
@@ -116,6 +116,38 @@ async fn mods(paths: &Paths) -> Result<()> {
                 }
             });
             user_mods::sync(&client, paths, &manifest, &reporter).await
+        }
+        // Optional pack mods: `mods pack` lists them, `mods pack <id> on|off` switches one.
+        "pack" if arg(1).is_empty() => {
+            for o in user_mods::list(paths, &pack)?.options {
+                println!(
+                    "{} {} {}{}",
+                    if o.enabled { "+" } else { "-" },
+                    o.id,
+                    o.name,
+                    if o.missing.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" (нужен {})", o.missing.join(", "))
+                    }
+                );
+            }
+        }
+        "pack" => {
+            let reporter = Reporter::new(|e| {
+                if let Event::Log { line } = e {
+                    eprintln!("{line}")
+                }
+            });
+            user_mods::set_pack_option(
+                &client,
+                paths,
+                &manifest,
+                &arg(1),
+                arg(2) != "off",
+                &reporter,
+            )
+            .await?
         }
         "update" => println!(
             "updated: {:?}",

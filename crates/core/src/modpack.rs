@@ -2,8 +2,15 @@
 //! same `config/minehouse-pack.json` state as the in-game updater of the
 //! MineHouse Menu mod, so the two never fight. Mods the player added
 //! themselves are never touched (see [`crate::user_mods`]).
+//!
+//! Optional mods: the manifest's `options` may be turned off by the player,
+//! each file's `choices` says which options keep it (none: always). The choice
+//! is `disabled` in the state file. An optional mod the player deleted (or
+//! swapped for their own file) counts as turned off and is not downloaded
+//! again; a required file always comes back.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::path::Path;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -27,6 +34,21 @@ pub struct Manifest {
     /// exactly this version, or the server won't let them in.
     #[serde(default)]
     pub server_mods: Vec<ServerMod>,
+    /// Mods the player may turn off. Older manifests: none, everything is required.
+    #[serde(default)]
+    pub options: Vec<PackOption>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PackOption {
+    /// Modrinth slug, as in the files' `mod`.
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub why: Option<String>,
+    /// Options it can't run without (Iris needs Sodium).
+    #[serde(default)]
+    pub requires: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -44,13 +66,100 @@ pub struct PackFile {
     pub url: String,
     pub sha512: String,
     pub size: u64,
+    /// Modrinth slug of the mod in this file (not on our own jars).
+    #[serde(default, rename = "mod")]
+    pub mod_slug: Option<String>,
+    /// Installed while any of these options is on; `None`: always.
+    #[serde(default)]
+    pub choices: Option<Vec<String>>,
 }
 
 /// `config/minehouse-pack.json`
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct State {
     pub version: String,
     pub files: Vec<String>,
+    /// Options the player turned off.
+    #[serde(default)]
+    pub disabled: BTreeSet<String>,
+    /// Option → its main file as installed, to notice when the player deletes it.
+    #[serde(default)]
+    pub installed: BTreeMap<String, String>,
+}
+
+impl Manifest {
+    /// Options that end up on: not turned off, and everything they require is on.
+    pub fn enabled(&self, disabled: &BTreeSet<String>) -> HashSet<String> {
+        let by_id: HashMap<&str, &PackOption> =
+            self.options.iter().map(|o| (o.id.as_str(), o)).collect();
+        fn on<'a>(
+            id: &'a str,
+            by_id: &HashMap<&str, &'a PackOption>,
+            disabled: &BTreeSet<String>,
+            seen: &mut HashSet<&'a str>,
+        ) -> bool {
+            let Some(o) = by_id.get(id) else { return false };
+            if disabled.contains(id) {
+                return false;
+            }
+            if !seen.insert(id) {
+                return true;
+            }
+            o.requires.iter().all(|r| on(r, by_id, disabled, seen))
+        }
+        self.options
+            .iter()
+            .filter(|o| on(&o.id, &by_id, disabled, &mut HashSet::new()))
+            .map(|o| o.id.clone())
+            .collect()
+    }
+
+    /// The files to have installed with this choice.
+    pub fn wanted(&self, disabled: &BTreeSet<String>) -> Vec<&PackFile> {
+        let on = self.enabled(disabled);
+        self.files
+            .iter()
+            .filter(|f| match &f.choices {
+                None => true,
+                Some(c) => c.is_empty() || c.iter().any(|c| on.contains(c)),
+            })
+            .collect()
+    }
+
+    pub fn main_file(&self, option: &str) -> Option<&PackFile> {
+        self.files
+            .iter()
+            .find(|f| f.mod_slug.as_deref() == Some(option))
+    }
+
+    /// The player's choice: what they turned off, plus optional mods they
+    /// deleted from `mods/` since the last install.
+    pub fn disabled_after(&self, old: Option<&State>, game: &Path) -> BTreeSet<String> {
+        let Some(old) = old else {
+            return BTreeSet::new();
+        };
+        let mut disabled = old.disabled.clone();
+        let had: HashSet<&str> = old.files.iter().map(String::as_str).collect();
+        let gone = |p: &str| safe_join(game, p).map(|p| !p.exists()).unwrap_or(false);
+        for o in &self.options {
+            if disabled.contains(&o.id) {
+                continue;
+            }
+            let Some(main) = self.main_file(&o.id) else {
+                continue;
+            };
+            let prev = old.installed.get(&o.id).map(String::as_str).or_else(|| {
+                had.contains(main.path.as_str())
+                    .then_some(main.path.as_str())
+            });
+            if let Some(prev) = prev {
+                if gone(prev) && gone(&main.path) {
+                    disabled.insert(o.id.clone());
+                }
+            }
+        }
+        disabled
+    }
 }
 
 pub async fn fetch_manifest(client: &reqwest::Client, paths: &Paths) -> Result<Manifest> {
@@ -70,6 +179,28 @@ pub async fn read_state(paths: &Paths) -> Option<State> {
     serde_json::from_slice(&bytes).ok()
 }
 
+pub fn read_state_sync(paths: &Paths) -> Option<State> {
+    let bytes = std::fs::read(state_path(paths)).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// Options the player turned off (as of the last install or choice).
+pub fn disabled(paths: &Paths) -> BTreeSet<String> {
+    read_state_sync(paths)
+        .map(|s| s.disabled)
+        .unwrap_or_default()
+}
+
+/// Saves the player's choice; [`install`] applies it.
+pub fn set_disabled(paths: &Paths, disabled: BTreeSet<String>) -> Result<()> {
+    let mut state = read_state_sync(paths).unwrap_or_default();
+    state.disabled = disabled;
+    let path = state_path(paths);
+    std::fs::create_dir_all(path.parent().unwrap())?;
+    std::fs::write(path, serde_json::to_vec_pretty(&state)?)?;
+    Ok(())
+}
+
 /// Downloads new/changed pack files, removes files the pack dropped,
 /// writes the state file and first-run defaults.
 pub async fn install(
@@ -82,8 +213,19 @@ pub async fn install(
     tokio::fs::create_dir_all(game.join("mods")).await?;
     tokio::fs::create_dir_all(game.join("config")).await?;
 
+    let old = read_state(paths).await;
+    let disabled = manifest.disabled_after(old.as_ref(), &game);
+    if let Some(o) = &old {
+        for id in disabled.difference(&o.disabled) {
+            reporter.log(format!(
+                "Мод сборки «{id}» удалён из папки mods, больше не ставим"
+            ));
+        }
+    }
+    let wanted_files = manifest.wanted(&disabled);
+
     let mut downloads = Vec::new();
-    for f in &manifest.files {
+    for f in &wanted_files {
         downloads.push(Download {
             url: f.url.clone(),
             path: safe_join(&game, &f.path)?,
@@ -100,19 +242,28 @@ pub async fn install(
         ));
     }
 
-    let wanted: HashSet<&str> = manifest.files.iter().map(|f| f.path.as_str()).collect();
-    if let Some(old) = read_state(paths).await {
+    let wanted: HashSet<&str> = wanted_files.iter().map(|f| f.path.as_str()).collect();
+    if let Some(old) = &old {
         for p in old.files.iter().filter(|p| !wanted.contains(p.as_str())) {
             if let Ok(path) = safe_join(&game, p) {
                 if tokio::fs::remove_file(&path).await.is_ok() {
-                    reporter.log(format!("Удалён старый файл сборки: {p}"));
+                    reporter.log(format!("Удалён файл сборки: {p}"));
                 }
             }
         }
     }
+    let on = manifest.enabled(&disabled);
     let state = State {
         version: manifest.version.clone(),
-        files: manifest.files.iter().map(|f| f.path.clone()).collect(),
+        files: wanted_files.iter().map(|f| f.path.clone()).collect(),
+        installed: wanted_files
+            .iter()
+            .filter_map(|f| {
+                let m = f.mod_slug.as_ref()?;
+                on.contains(m).then(|| (m.clone(), f.path.clone()))
+            })
+            .collect(),
+        disabled,
     };
     tokio::fs::write(state_path(paths), serde_json::to_vec_pretty(&state)?).await?;
 
@@ -179,6 +330,67 @@ mod tests {
         .unwrap();
         assert_eq!(m.minecraft, None);
         assert_eq!(m.files[0].path, "mods/a.jar");
+    }
+
+    fn optional_manifest() -> Manifest {
+        serde_json::from_str(
+            r#"{"version":"2","options":[
+                {"id":"sodium","name":"Sodium"},
+                {"id":"iris","name":"Iris","requires":["sodium"]},
+                {"id":"litematica","name":"Litematica"}],
+              "files":[
+                {"path":"mods/fabric-api.jar","url":"u","sha512":"a","size":1,"mod":"fabric-api"},
+                {"path":"mods/sodium.jar","url":"u","sha512":"a","size":1,"mod":"sodium","choices":["sodium"]},
+                {"path":"mods/iris.jar","url":"u","sha512":"a","size":1,"mod":"iris","choices":["iris"]},
+                {"path":"mods/litematica.jar","url":"u","sha512":"a","size":1,"mod":"litematica","choices":["litematica"]},
+                {"path":"mods/malilib.jar","url":"u","sha512":"a","size":1,"mod":"malilib","choices":["litematica"]}]}"#,
+        )
+        .unwrap()
+    }
+
+    fn paths_of(files: Vec<&PackFile>) -> Vec<&str> {
+        files.into_iter().map(|f| f.path.as_str()).collect()
+    }
+
+    #[test]
+    fn choice_drops_mod_its_libraries_and_dependents() {
+        let m = optional_manifest();
+        assert_eq!(m.wanted(&BTreeSet::new()).len(), 5);
+        let off: BTreeSet<String> = ["sodium".to_string(), "litematica".to_string()].into();
+        assert_eq!(paths_of(m.wanted(&off)), vec!["mods/fabric-api.jar"]);
+    }
+
+    #[test]
+    fn deleted_optional_mod_stays_off_required_comes_back() {
+        let m = optional_manifest();
+        let dir = std::env::temp_dir().join(format!("mh-pack-test-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("mods")).unwrap();
+        // The player deleted Litematica and fabric-api; legacy state without `installed`.
+        for f in ["sodium.jar", "iris.jar", "malilib.jar"] {
+            std::fs::write(dir.join("mods").join(f), b"x").unwrap();
+        }
+        let old = State {
+            version: "1".into(),
+            files: m.files.iter().map(|f| f.path.clone()).collect(),
+            ..Default::default()
+        };
+        let disabled = m.disabled_after(Some(&old), &dir);
+        assert_eq!(disabled, BTreeSet::from(["litematica".to_string()]));
+        assert_eq!(
+            paths_of(m.wanted(&disabled)),
+            vec!["mods/fabric-api.jar", "mods/sodium.jar", "mods/iris.jar"]
+        );
+        // A fresh install has nothing to compare with.
+        assert!(m.disabled_after(None, &dir).is_empty());
+        // Updated mod with a new file name: the old one, still there, counts as installed.
+        let old = State {
+            version: "1".into(),
+            files: vec![],
+            installed: BTreeMap::from([("sodium".into(), "mods/iris.jar".into())]),
+            ..Default::default()
+        };
+        assert!(m.disabled_after(Some(&old), &dir).is_empty());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
