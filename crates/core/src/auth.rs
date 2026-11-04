@@ -285,3 +285,56 @@ impl Session {
         self.expires_at > now() + 300
     }
 }
+
+/// Is `name` a valid Minecraft nickname (3–16 of A–Z, a–z, 0–9, _)?
+pub fn valid_nickname(name: &str) -> bool {
+    (3..=16).contains(&name.len()) && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+/// Session for an offline profile (an alt of a licensed player): the same UUID
+/// an offline-mode server gives this nick (`UUID.nameUUIDFromBytes("OfflinePlayer:" + name)`),
+/// no Microsoft token. The launcher only offers it after refreshing a licensed
+/// Microsoft account, like Prism Launcher does.
+pub fn offline_session(name: &str) -> Session {
+    use md5::{Digest, Md5};
+    let mut hash: [u8; 16] = Md5::digest(format!("OfflinePlayer:{name}").as_bytes()).into();
+    hash[6] = (hash[6] & 0x0f) | 0x30; // version 3
+    hash[8] = (hash[8] & 0x3f) | 0x80; // IETF variant
+    Session {
+        name: name.to_string(),
+        uuid: hex::encode(hash),
+        xuid: "0".into(),
+        access_token: "0".into(),
+        expires_at: u64::MAX,
+    }
+}
+
+impl Session {
+    /// Offline profile: no Microsoft token behind it.
+    pub fn is_offline(&self) -> bool {
+        self.access_token == "0"
+    }
+}
+
+#[cfg(test)]
+mod offline_tests {
+    use super::*;
+
+    #[test]
+    fn offline_uuid_matches_java() {
+        // UUID.nameUUIDFromBytes("OfflinePlayer:Notch".getBytes(UTF_8))
+        assert_eq!(
+            offline_session("Notch").uuid,
+            "b50ad385829d3141a2167e7d7539ba7f"
+        );
+    }
+
+    #[test]
+    fn nicknames() {
+        assert!(valid_nickname("P5ina_alt"));
+        assert!(!valid_nickname("ab"));
+        assert!(!valid_nickname("ник"));
+        assert!(!valid_nickname("a b c"));
+        assert!(!valid_nickname("seventeen_chars_x"));
+    }
+}

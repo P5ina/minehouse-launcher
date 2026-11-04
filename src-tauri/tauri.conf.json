@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' https://mc-heads.net https://cdn.modrinth.com data:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; img-src 'self' https://mc-heads.net https://cdn.modrinth.com https://www.minehouse.pro https://minehouse.pro https://*.supabase.co https://cdn.discordapp.com https://media.discordapp.net data:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"
     }
   },
   "bundle": {

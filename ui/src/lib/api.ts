@@ -8,6 +8,8 @@ export type Settings = {
   memory_mb: number
   close_on_launch: boolean
   extra_jvm_args: string
+  offline_profiles: string[]
+  active_profile: string | null
 }
 
 export type Account = { name: string; uuid: string }
@@ -79,4 +81,28 @@ export function downloadsLabel(n: number) {
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)} млн`
   if (n >= 1e3) return `${Math.round(n / 1e3)} тыс.`
   return String(n)
+}
+
+export type NewsPost = {
+  slug: string
+  kind: "news" | "blog"
+  title: string
+  excerpt: string
+  cover_url: string | null
+  pinned: boolean
+  published_at: string | null
+  author_name: string | null
+  url: string
+}
+
+export function newsDate(iso: string | null) {
+  if (!iso) return ""
+  return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })
+}
+
+/** Ник, за который будем играть: твинк или основной аккаунт. */
+export function playingAs(info: Info | null) {
+  const alt = info?.settings.active_profile
+  if (alt && info?.settings.offline_profiles.includes(alt)) return { name: alt, alt: true }
+  return info?.account ? { name: info.account.name, alt: false } : null
 }

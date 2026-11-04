@@ -72,7 +72,15 @@ pub fn build_args(
         ("auth_access_token", session.access_token.clone()),
         ("clientid", String::new()),
         ("auth_xuid", session.xuid.clone()),
-        ("user_type", "msa".into()),
+        (
+            "user_type",
+            if session.is_offline() {
+                "legacy"
+            } else {
+                "msa"
+            }
+            .into(),
+        ),
         ("user_properties", "{}".into()),
         ("version_type", "MineHouse".into()),
         ("natives_directory", s(natives)),
@@ -153,7 +161,12 @@ pub async fn launch(
         tokio::spawn(async move {
             let mut lines = BufReader::new(r).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                reporter.log(line.replace(&token, "<token>"));
+                // An offline profile's token is "0": nothing to hide.
+                if token.len() > 8 {
+                    reporter.log(line.replace(&token, "<token>"));
+                } else {
+                    reporter.log(line);
+                }
             }
         })
     };
