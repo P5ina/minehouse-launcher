@@ -68,6 +68,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # No signing key on PRs: build the app without updater artifacts.
       - run: pnpm tauri build ${{ matrix.args }} --config src-tauri/tauri.ci.conf.json
+        env:
+          # Иначе на CI Tauri пропускает оформление окна dmg (фон и иконки).
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
       # Скриншот окна установщика, как его увидит игрок (артефакт dmg-window).
       - name: Screenshot dmg window
         if: matrix.name == 'macos-arm'
