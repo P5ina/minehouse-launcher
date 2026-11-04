@@ -41,6 +41,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/share/metainfo/pro.minehouse.launcher.metainfo.xml": "../flatpak/pro.minehouse.launcher.metainfo.xml"
+        }
+      }
+    },
     "windows": {
       "nsis": {
         "installMode": "currentUser",

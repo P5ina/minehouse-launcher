@@ -6,15 +6,17 @@ import { Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 // Полоса сверху, если на GitHub вышла новая версия лаунчера.
-export function UpdateBanner() {
+// enabled=false во Flatpak: там лаунчер обновляет Flathub.
+export function UpdateBanner({ enabled }: { enabled: boolean }) {
   const [update, setUpdate] = useState<Update | null>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
+    if (!enabled) return
     check()
       .then(setUpdate)
       .catch((e) => console.warn("update check failed", e))
-  }, [])
+  }, [enabled])
 
   if (!update) return null
   const install = async () => {

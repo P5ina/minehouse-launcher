@@ -20,6 +20,8 @@ export type Info = {
   pack_version: string | null
   login_configured: boolean
   settings: Settings
+  /** false in Flatpak: updates come from Flathub */
+  self_update: boolean
 }
 
 export type ServerStatus = { online: number; max: number }
