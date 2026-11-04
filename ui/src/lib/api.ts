@@ -64,6 +64,16 @@ export type ProgressEvent =
   | { kind: "stage"; name: string }
   | { kind: "progress"; done: number; total: number }
   | { kind: "log"; line: string }
+  | ({ kind: "game" } & GameLine)
+
+// Строка лога игры, разобранная из log4j XML.
+export type GameLine = {
+  time: number
+  level: string
+  logger: string
+  thread: string
+  message: string
+}
 
 export function openUrl(url: string) {
   return invoke("open_url", { url })

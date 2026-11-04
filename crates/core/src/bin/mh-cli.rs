@@ -15,6 +15,7 @@ async fn main() -> Result<()> {
     let reporter = Reporter::new(|e| match e {
         Event::Stage { name } => eprintln!("== {name}"),
         Event::Log { line } => eprintln!("{line}"),
+        Event::Game(g) => eprintln!("[{}] [{}] {}", g.level, g.logger, g.message),
         Event::Progress { .. } => {}
     });
     match std::env::args().nth(1).as_deref() {

@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::auth::Session;
+use crate::gamelog::{Log4jParser, Parsed};
 use crate::install::Installed;
 use crate::paths::Paths;
 use crate::progress::Reporter;
@@ -160,13 +161,29 @@ pub async fn launch(
         let token = token.clone();
         tokio::spawn(async move {
             let mut lines = BufReader::new(r).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                // An offline profile's token is "0": nothing to hide.
+            let mut parser = Log4jParser::default();
+            // An offline profile's token is "0": nothing to hide.
+            let hide = |s: String| {
                 if token.len() > 8 {
-                    reporter.log(line.replace(&token, "<token>"));
+                    s.replace(&token, "<token>")
                 } else {
-                    reporter.log(line);
+                    s
                 }
+            };
+            let emit = |p: Parsed| match p {
+                Parsed::Game(mut g) => {
+                    g.message = hide(g.message);
+                    reporter.game(g);
+                }
+                Parsed::Plain(line) => reporter.log(hide(line)),
+            };
+            while let Ok(Some(line)) = lines.next_line().await {
+                for p in parser.push(&line) {
+                    emit(p);
+                }
+            }
+            if let Some(p) = parser.flush() {
+                emit(p);
             }
         })
     };

@@ -12,6 +12,8 @@ pub enum Event {
     Progress { done: u64, total: u64 },
     /// A line for the log panel (also game stdout/stderr).
     Log { line: String },
+    /// A parsed log4j line from the game.
+    Game(crate::gamelog::GameLine),
 }
 
 #[derive(Clone)]
@@ -32,5 +34,8 @@ impl Reporter {
     }
     pub fn log(&self, line: impl Into<String>) {
         (self.0)(Event::Log { line: line.into() })
+    }
+    pub fn game(&self, line: crate::gamelog::GameLine) {
+        (self.0)(Event::Game(line))
     }
 }

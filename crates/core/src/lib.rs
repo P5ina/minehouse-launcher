@@ -7,6 +7,7 @@
 
 pub mod auth;
 pub mod fabric;
+pub mod gamelog;
 pub mod http;
 pub mod install;
 pub mod java;
