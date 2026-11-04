@@ -1,0 +1,27 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:Geist;src:url(../../node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2) format('woff2');font-weight:100 900;unicode-range:U+0000-00FF}
+@font-face{font-family:Geist;src:url(../../node_modules/@fontsource-variable/geist/files/geist-cyrillic-wght-normal.woff2) format('woff2');font-weight:100 900;unicode-range:U+0400-04FF}
+html,body{margin:0;width:660px;height:420px;overflow:hidden}
+body{font-family:Geist;background:#fafafa;color:#18181b;position:relative}
+.grid{position:absolute;inset:0;background-image:linear-gradient(#e4e4e7 1px,transparent 1px),linear-gradient(90deg,#e4e4e7 1px,transparent 1px);background-size:22px 22px;-webkit-mask-image:radial-gradient(ellipse 70% 60% at 50% 55%,#000 30%,transparent 80%);opacity:.7}
+.vox{position:absolute;width:21px;height:21px;border-radius:3px}
+h1{position:absolute;top:38px;width:100%;text-align:center;margin:0;font-size:30px;font-weight:650;letter-spacing:-.03em}
+p{position:absolute;top:80px;width:100%;text-align:center;margin:0;font-size:14px;color:#71717a}
+svg{position:absolute;left:0;top:0}
+.foot{position:absolute;bottom:22px;width:100%;text-align:center;font-size:12px;color:#a1a1aa;letter-spacing:.02em}
+.foot b{color:#52525b;font-weight:550}
+</style></head><body>
+<div class="grid"></div>
+<div id="v"></div>
+<h1>MineHouse</h1>
+<p>Перетащите иконку в папку «Программы»</p>
+<svg width="660" height="420"><defs><marker id="a" markerWidth="10" markerHeight="10" refX="6" refY="5" orient="auto"><path d="M1,1 L7,5 L1,9" fill="none" stroke="#a1a1aa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<path d="M262 222 Q330 196 396 222" fill="none" stroke="#a1a1aa" stroke-width="2" stroke-dasharray="2 7" stroke-linecap="round" marker-end="url(#a)"/></svg>
+<div class="foot">Сервер <b>play.minehouse.pro</b> · minehouse.pro</div>
+<script>
+const c=["#16a34a","#22c55e","#a16207","#78716c","#0ea5e9"];let s=7;const r=()=>(s=(s*9301+49297)%233280)/233280;
+const v=document.getElementById('v');
+for(let i=0;i<40;i++){const x=Math.floor(r()*30),y=Math.floor(r()*19);const cx=x*22+1,cy=y*22+1;
+ if(cy>110&&cy<340&&cx>80&&cx<580)continue; if(cy<110&&cx>170&&cx<490)continue;
+ const d=document.createElement('div');d.className='vox';d.style.left=cx+'px';d.style.top=cy+'px';d.style.background=c[Math.floor(r()*c.length)];d.style.opacity=(.12+r()*.22).toFixed(2);v.appendChild(d)}
+</script></body></html>

@@ -48,6 +48,14 @@
         }
       }
     },
+    "macOS": {
+      "dmg": {
+        "background": "dmg/background.tiff",
+        "windowSize": { "width": 660, "height": 452 },
+        "appPosition": { "x": 180, "y": 230 },
+        "applicationFolderPosition": { "x": 480, "y": 230 }
+      }
+    },
     "windows": {
       "nsis": {
         "installMode": "currentUser",
