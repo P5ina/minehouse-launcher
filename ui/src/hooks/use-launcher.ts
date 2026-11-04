@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import {
   invoke,
   listen,
+  type GameLine,
   type Info,
   type ProgressEvent,
   type ServerStatus,
@@ -15,6 +16,12 @@ export type ServerState =
 
 const MAX_LOG = 2000
 
+// Строка журнала: шаг установки, обычный текст или строка лога игры.
+export type LogEntry =
+  | { kind: "stage"; text: string }
+  | { kind: "text"; text: string }
+  | ({ kind: "game" } & GameLine)
+
 // Состояние главного окна: аккаунт, сервер, установка и журнал.
 export function useLauncher() {
   const [info, setInfo] = useState<Info | null>(null)
@@ -22,14 +29,15 @@ export function useLauncher() {
   const [playing, setPlaying] = useState(false)
   const [stage, setStage] = useState("")
   const [progress, setProgress] = useState<number | null>(null)
-  const [log, setLog] = useState<string[]>([])
-  const logRef = useRef<string[]>([])
+  const [log, setLog] = useState<LogEntry[]>([])
+  const logRef = useRef<LogEntry[]>([])
 
-  const pushLog = useCallback((line: string) => {
-    const next = [...logRef.current, line]
+  const pushEntry = useCallback((entry: LogEntry) => {
+    const next = [...logRef.current, entry]
     logRef.current = next.length > MAX_LOG ? next.slice(-1500) : next
     setLog(logRef.current)
   }, [])
+  const pushLog = useCallback((text: string) => pushEntry({ kind: "text", text }), [pushEntry])
 
   const refresh = useCallback(async () => {
     setInfo(await invoke<Info>("info"))
@@ -51,11 +59,13 @@ export function useLauncher() {
       if (e.kind === "stage") {
         setStage(e.name)
         setProgress(null)
-        pushLog(`== ${e.name}`)
+        pushEntry({ kind: "stage", text: e.name })
       } else if (e.kind === "progress") {
         setProgress(e.total > 0 ? Math.min(100, (e.done / e.total) * 100) : null)
       } else if (e.kind === "log") {
         pushLog(e.line)
+      } else if (e.kind === "game") {
+        pushEntry(e)
       }
     })
     const offGame = listen<string>("game", ({ payload }) => {
@@ -66,7 +76,7 @@ export function useLauncher() {
       offProgress.then((f) => f())
       offGame.then((f) => f())
     }
-  }, [refresh, ping, pushLog])
+  }, [refresh, ping, pushLog, pushEntry])
 
   const play = useCallback(async () => {
     setPlaying(true)
