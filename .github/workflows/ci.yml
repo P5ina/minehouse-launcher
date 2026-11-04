@@ -45,9 +45,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: windows, os: windows-latest, args: "" }
-          - { name: macos-arm, os: macos-latest, args: "--target aarch64-apple-darwin" }
-          - { name: linux, os: ubuntu-22.04, args: "" }
+          - { name: windows, os: windows-latest, args: "--no-bundle" }
+          # dmg тоже собираем: так видно, что фон и раскладка окна установщика в порядке.
+          - { name: macos-arm, os: macos-latest, args: "--target aarch64-apple-darwin --bundles dmg" }
+          - { name: linux, os: ubuntu-22.04, args: "--no-bundle" }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -66,7 +67,23 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
       - run: pnpm install --frozen-lockfile
       # No signing key on PRs: build the app without updater artifacts.
-      - run: pnpm tauri build --no-bundle ${{ matrix.args }} --config src-tauri/tauri.ci.conf.json
+      - run: pnpm tauri build ${{ matrix.args }} --config src-tauri/tauri.ci.conf.json
+      # Скриншот окна установщика, как его увидит игрок (артефакт dmg-window).
+      - name: Screenshot dmg window
+        if: matrix.name == 'macos-arm'
+        continue-on-error: true
+        run: |
+          dmg=$(echo target/*/release/bundle/dmg/*.dmg)
+          hdiutil attach "$dmg" -mountpoint /Volumes/MineHouse
+          open /Volumes/MineHouse
+          sleep 5
+          screencapture -x dmg-window.png
+      - if: matrix.name == 'macos-arm'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmg-window
+          path: dmg-window.png
+          if-no-files-found: ignore
       # Готовый исполняемый файл для проверки PR: вкладка Summary → Artifacts.
       - uses: actions/upload-artifact@v4
         with:
@@ -75,4 +92,5 @@ jobs:
             target/release/minehouse-launcher
             target/release/minehouse-launcher.exe
             target/*/release/minehouse-launcher
+            target/*/release/bundle/dmg/*.dmg
           if-no-files-found: error
