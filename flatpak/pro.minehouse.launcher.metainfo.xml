@@ -99,6 +99,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.4.3" date="2026-11-06">
+      <description>
+        <p>Libraries that other mods depend on are no longer turned off before launch.</p>
+      </description>
+    </release>
     <release version="0.4.2" date="2026-11-04">
       <description>
         <p>New macOS installer window and app icon.</p>

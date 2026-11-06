@@ -195,6 +195,32 @@ impl Pack {
         }
     }
 
+    /// [`Self::verdict`] for a mod that is pulled in as a dependency.
+    /// Libraries are often tagged "server: required" just because they can
+    /// run there; whether a server part is needed is up to the mod that
+    /// pulls them in, which is checked on its own.
+    pub fn dependency_verdict(
+        &self,
+        project: &str,
+        client_side: &str,
+        server_side: &str,
+    ) -> Verdict {
+        match self.verdict(project, client_side, server_side) {
+            Verdict::NeedsServer => Verdict::Ok,
+            v => v,
+        }
+    }
+
+    /// The verdict for a mod the player has, taking into account whether
+    /// another mod pulled it in.
+    fn verdict_for(&self, m: &UserMod, info: &modrinth::Project) -> Verdict {
+        if m.required_by.is_empty() {
+            self.verdict(&info.id, &info.client_side, &info.server_side)
+        } else {
+            self.dependency_verdict(&info.id, &info.client_side, &info.server_side)
+        }
+    }
+
     /// A jar with the Fabric id of a server mod but not the server's file
     /// (e.g. the original FSit next to the server's FSit Continued).
     pub fn clashes_with_server(&self, mod_id: Option<&str>, version_id: Option<&str>) -> bool {
@@ -439,13 +465,11 @@ async fn plan(
             .into_iter()
             .next()
             .with_context(|| format!("проект {id} не найден на Modrinth"))?;
-        let mut verdict = pack.verdict(&info.id, &info.client_side, &info.server_side);
-        // Libraries are often tagged "server: required" just because they
-        // can run there; whether a server part is needed is up to the mod
-        // that pulls them in, which was checked already.
-        if parent.is_some() && verdict == Verdict::NeedsServer {
-            verdict = Verdict::Ok;
-        }
+        let verdict = if parent.is_some() {
+            pack.dependency_verdict(&info.id, &info.client_side, &info.server_side)
+        } else {
+            pack.verdict(&info.id, &info.client_side, &info.server_side)
+        };
         if parent.is_some()
             && (verdict == Verdict::InPack
                 || index
@@ -759,7 +783,7 @@ pub async fn update_all(
         else {
             continue;
         };
-        let verdict = pack.verdict(&info.id, &info.client_side, &info.server_side);
+        let verdict = pack.verdict_for(m, &info);
         if !verdict.allowed() {
             continue;
         }
@@ -905,7 +929,7 @@ async fn sync_inner(
         else {
             continue;
         };
-        let verdict = pack.verdict(&info.id, &info.client_side, &info.server_side);
+        let verdict = pack.verdict_for(m, &info);
         if !verdict.allowed() {
             disable(paths, m, verdict.reason().to_string(), reporter);
             continue;
@@ -1012,6 +1036,15 @@ mod tests {
         assert_eq!(
             pack.verdict("x", "optional", "required"),
             Verdict::NeedsServer
+        );
+        // A library another mod pulled in (Fzzy Config for Subtle Effects).
+        assert_eq!(
+            pack.dependency_verdict("x", "required", "required"),
+            Verdict::Ok
+        );
+        assert_eq!(
+            pack.dependency_verdict("x", "unsupported", "required"),
+            Verdict::ServerOnly
         );
         assert_eq!(pack.verdict("x", "required", "optional"), Verdict::Ok);
         assert_eq!(pack.verdict("x", "required", "unsupported"), Verdict::Ok);
