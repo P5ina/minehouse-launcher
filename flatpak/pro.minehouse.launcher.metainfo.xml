@@ -99,6 +99,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.5.0" date="2026-11-06">
+      <description>
+        <p>Resource packs and shaders: search and install from Modrinth, add your own .zip, turn them on and order them.</p>
+      </description>
+    </release>
     <release version="0.4.4" date="2026-11-06">
       <description>
         <p>Dependencies of a mod that is on are never turned off automatically, and ones turned off earlier come back.</p>

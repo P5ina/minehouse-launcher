@@ -1,4 +1,4 @@
-import { Loader2, Package, Play, ScrollText, Settings } from "lucide-react"
+import { Loader2, Package, Palette, Play, ScrollText, Settings } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -48,6 +48,7 @@ export function BottomBar({
   logOpen,
   onPlay,
   onMods,
+  onPacks,
   onLog,
   onSettings,
   onLogin,
@@ -60,6 +61,7 @@ export function BottomBar({
   logOpen: boolean
   onPlay: () => void
   onMods: () => void
+  onPacks: () => void
   onLog: () => void
   onSettings: () => void
   onLogin: () => void
@@ -79,6 +81,10 @@ export function BottomBar({
         <Button variant="outline" size="lg" onClick={onMods}>
           <Package />
           Моды
+        </Button>
+        <Button variant="outline" size="lg" onClick={onPacks}>
+          <Palette />
+          Паки
         </Button>
         <IconButton label="Журнал" active={logOpen} onClick={onLog}>
           <ScrollText />

@@ -94,6 +94,16 @@ impl Version {
             .find(|f| f.primary)
             .or_else(|| self.files.iter().find(jar))
     }
+
+    /// The `.zip` of a resource pack or shader pack version.
+    pub fn primary_zip(&self) -> Option<&VersionFile> {
+        let zip = |f: &&VersionFile| f.filename.to_ascii_lowercase().ends_with(".zip");
+        self.files
+            .iter()
+            .filter(zip)
+            .find(|f| f.primary)
+            .or_else(|| self.files.iter().find(zip))
+    }
 }
 
 /// Fabric mods for `mc`, most relevant first (most downloaded for an empty
@@ -111,7 +121,36 @@ pub async fn search(
         vec!["project_type:mod".to_string()],
     ];
     facets.extend(exclude.iter().map(|id| vec![format!("project_id!={id}")]));
-    let facets = serde_json::to_string(&facets)?;
+    search_facets(client, query, offset, &facets).await
+}
+
+/// Resource packs (`project_type` "resourcepack") or shader packs ("shader",
+/// only the ones made for Iris) for `mc`.
+pub async fn search_content(
+    client: &reqwest::Client,
+    project_type: &str,
+    category: Option<&str>,
+    query: &str,
+    mc: &str,
+    offset: u32,
+) -> Result<(Vec<SearchHit>, u64)> {
+    let mut facets = vec![
+        vec![format!("project_type:{project_type}")],
+        vec![format!("versions:{mc}")],
+    ];
+    if let Some(c) = category {
+        facets.push(vec![format!("categories:{c}")]);
+    }
+    search_facets(client, query, offset, &facets).await
+}
+
+async fn search_facets(
+    client: &reqwest::Client,
+    query: &str,
+    offset: u32,
+    facets: &[Vec<String>],
+) -> Result<(Vec<SearchHit>, u64)> {
+    let facets = serde_json::to_string(facets)?;
     let index = if query.trim().is_empty() {
         "downloads"
     } else {
@@ -193,6 +232,37 @@ pub async fn latest_version(
         .json()
         .await?;
     Ok(pick_latest(versions))
+}
+
+/// Newest version of a resource pack (`loader` "minecraft") or shader pack
+/// ("iris") that lists `mc`; releases win.
+pub async fn latest_content_version(
+    client: &reqwest::Client,
+    project: &str,
+    loader: &str,
+    mc: &str,
+) -> Result<Option<Version>> {
+    let versions: Vec<Version> = client
+        .get(format!("{API}/project/{project}/version"))
+        .query(&[
+            ("loaders", serde_json::to_string(&[loader])?),
+            ("game_versions", serde_json::to_string(&[mc])?),
+        ])
+        .send()
+        .await
+        .context("Modrinth недоступен")?
+        .error_for_status()?
+        .json()
+        .await?;
+    let usable: Vec<Version> = versions
+        .into_iter()
+        .filter(|v| v.primary_zip().is_some())
+        .collect();
+    let idx = usable
+        .iter()
+        .position(|v| v.version_type == "release")
+        .unwrap_or(0);
+    Ok(usable.into_iter().nth(idx))
 }
 
 /// Modrinth lists versions newest first.

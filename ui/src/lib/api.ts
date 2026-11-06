@@ -120,3 +120,28 @@ export function playingAs(info: Info | null) {
   if (alt && info?.settings.offline_profiles.includes(alt)) return { name: alt, alt: true }
   return info?.account ? { name: info.account.name, alt: false } : null
 }
+
+export type PackKind = "resource" | "shader"
+
+/** Ресурспак или шейдер в папке игры. */
+export type ContentPack = {
+  file: string
+  title: string
+  version: string
+  project?: string | null
+  icon?: string | null
+  enabled: boolean
+  /** Место среди включённых ресурспаков: больше = важнее. */
+  order?: number | null
+}
+
+export type PacksListing = {
+  packs: ContentPack[]
+  minecraft: string
+  /** Шейдерам нужен Iris из сборки. */
+  iris: { ready: boolean; missing: string[] }
+}
+
+export type PackHit = Omit<SearchHit, "verdict" | "reason">
+export type PackSearch = { hits: PackHit[]; total: number }
+export type PacksAdded = { lines: string[]; kind: PackKind | null }

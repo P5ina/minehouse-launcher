@@ -3,9 +3,10 @@
 //!   mh-cli ping            server status
 //!   mh-cli login           Microsoft sign-in in the terminal, then play
 //!   mh-cli mods [list | search <q> | add <project> | jar <path> | rm <file> | update | sync]
+//!   mh-cli packs <resource|shader> [list | search <q> | add <project> | zip <path> | on|off <file> | rm <file> | update]
 use anyhow::Result;
 use minehouse_core::{
-    auth, http, install, launch, modpack, modrinth, paths::Paths, ping, progress::*,
+    auth, http, install, launch, modpack, modrinth, packs, paths::Paths, ping, progress::*,
     settings::Settings, user_mods,
 };
 
@@ -68,7 +69,61 @@ async fn main() -> Result<()> {
             .await?;
         }
         Some("mods") => mods(&paths).await?,
-        _ => eprintln!("usage: mh-cli install | ping | login | mods ..."),
+        Some("packs") => content_packs(&paths).await?,
+        _ => eprintln!("usage: mh-cli install | ping | login | mods ... | packs ..."),
+    }
+    Ok(())
+}
+
+async fn content_packs(paths: &Paths) -> Result<()> {
+    let client = http::client();
+    let args: Vec<String> = std::env::args().skip(2).collect();
+    let arg = |i: usize| args.get(i).cloned().unwrap_or_default();
+    let kind = packs::Kind::parse(&arg(0))?;
+    let mc = modpack::fetch_manifest(&client, paths)
+        .await?
+        .minecraft
+        .unwrap_or_else(|| minehouse_core::DEFAULT_MINECRAFT.into());
+    match arg(1).as_str() {
+        "" | "list" => {
+            for p in packs::list(paths, kind)? {
+                println!(
+                    "{} {} — {} {} [{}]",
+                    if p.enabled { "+" } else { "-" },
+                    p.file,
+                    p.title,
+                    p.version,
+                    p.project.unwrap_or_else(|| "zip".into())
+                );
+            }
+        }
+        "search" => {
+            let (hits, total) = modrinth::search_content(
+                &client,
+                kind.project_type(),
+                kind.category(),
+                &arg(2),
+                &mc,
+                0,
+            )
+            .await?;
+            println!("{total} found");
+            for h in hits {
+                println!("{} {}", h.project_id, h.title);
+            }
+        }
+        "add" => println!(
+            "{}",
+            packs::install_modrinth(&client, paths, kind, &arg(2), None, &mc).await?
+        ),
+        "zip" => {
+            let (k, t) = packs::add_local(&client, paths, std::path::Path::new(&arg(2))).await?;
+            println!("{k:?}: {t}");
+        }
+        "on" | "off" => packs::set_enabled(paths, kind, &arg(2), arg(1) == "on")?,
+        "rm" => packs::remove(paths, kind, &arg(2))?,
+        "update" => println!("{:?}", packs::update_all(&client, paths, kind, &mc).await?),
+        other => anyhow::bail!("unknown packs command {other}"),
     }
     Ok(())
 }

@@ -7,11 +7,13 @@ import { NewsStrip } from "@/components/launcher/news-strip"
 import { LogPanel } from "@/components/launcher/log-panel"
 import { LoginDialog } from "@/components/launcher/login-dialog"
 import { ModsDialog, type ModsTab } from "@/components/launcher/mods-dialog"
+import { PacksDialog } from "@/components/launcher/packs-dialog"
 import { SettingsDialog } from "@/components/launcher/settings-dialog"
 import { TopBar } from "@/components/launcher/top-bar"
 import { UpdateBanner } from "@/components/launcher/update-banner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { useLauncher } from "@/hooks/use-launcher"
+import type { PackKind } from "@/lib/api"
 
 export function App() {
   const l = useLauncher()
@@ -20,6 +22,11 @@ export function App() {
   const [mods, setMods] = useState<{ open: boolean; tab: ModsTab; dropped: string[] }>({
     open: false,
     tab: "mine",
+    dropped: [],
+  })
+  const [packs, setPacks] = useState<{ open: boolean; kind: PackKind; dropped: string[] }>({
+    open: false,
+    kind: "resource",
     dropped: [],
   })
   const [showLog, setShowLog] = useState(false)
@@ -46,6 +53,7 @@ export function App() {
           logOpen={showLog}
           onPlay={onPlay}
           onMods={() => setMods({ open: true, tab: "mine", dropped: [] })}
+          onPacks={() => setPacks((p) => ({ ...p, open: true, dropped: [] }))}
           onLog={() => setShowLog((v) => !v)}
           onSettings={() => setSettingsOpen(true)}
           onLogin={() => setLoginOpen(true)}
@@ -74,8 +82,18 @@ export function App() {
         onTabChange={(tab) => setMods((m) => ({ ...m, tab }))}
         onOpenChange={(open) => setMods((m) => ({ ...m, open, dropped: [] }))}
       />
+      <PacksDialog
+        open={packs.open}
+        kind={packs.kind}
+        dropped={packs.dropped}
+        onKindChange={(kind) => setPacks((p) => ({ ...p, kind }))}
+        onOpenChange={(open) => setPacks((p) => ({ ...p, open, dropped: [] }))}
+      />
       <DropOverlay
-        onDrop={(paths) => setMods({ open: true, tab: "mine", dropped: paths })}
+        onDrop={(jars, zips) => {
+          if (jars.length) setMods({ open: true, tab: "mine", dropped: jars })
+          else if (zips.length) setPacks((p) => ({ ...p, open: true, dropped: zips }))
+        }}
       />
     </TooltipProvider>
   )
