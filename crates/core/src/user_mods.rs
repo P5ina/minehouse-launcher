@@ -815,6 +815,63 @@ pub async fn update_all(
     titles
 }
 
+/// Modrinth projects of the mods that are on.
+fn enabled_projects(index: &Index) -> HashSet<String> {
+    index
+        .mods
+        .iter()
+        .filter(|m| m.enabled)
+        .filter_map(|m| m.project.clone())
+        .collect()
+}
+
+/// A dependency of a mod that is on. The launcher never turns these off by
+/// itself: the mod that pulled it in decides whether it is needed.
+fn needed(m: &UserMod, enabled: &HashSet<String>) -> bool {
+    m.required_by.iter().any(|p| enabled.contains(p))
+}
+
+/// Turns back on the dependencies the launcher turned off by itself while
+/// the mod that needs them is on (older launchers did that). Ones the
+/// player turned off by hand (no note) stay off, and so do ones the pack
+/// already has: a second copy would crash the game, and the pack's copy
+/// serves the mod that needs it.
+fn restore_needed(
+    paths: &Paths,
+    index: &mut Index,
+    pack_ids: &HashSet<String>,
+    reporter: &Reporter,
+) {
+    loop {
+        let enabled = enabled_projects(index);
+        let mut changed = false;
+        for m in index.mods.iter_mut() {
+            if m.enabled
+                || m.note.is_none()
+                || !needed(m, &enabled)
+                || m.mod_id.as_ref().is_some_and(|id| pack_ids.contains(id))
+            {
+                continue;
+            }
+            let from = file_path(paths, m);
+            m.enabled = true;
+            if std::fs::rename(&from, file_path(paths, m)).is_err() {
+                m.enabled = false;
+                continue;
+            }
+            m.note = None;
+            reporter.log(format!(
+                "Мод «{}» снова включён: он нужен другому моду",
+                m.title
+            ));
+            changed = true;
+        }
+        if !changed {
+            return;
+        }
+    }
+}
+
 fn disable(paths: &Paths, m: &mut UserMod, note: String, reporter: &Reporter) {
     let from = file_path(paths, m);
     m.enabled = false;
@@ -900,9 +957,12 @@ async fn sync_inner(
 ) -> Result<()> {
     let pack = Pack::load(manifest, paths);
     let mut index = reconcile(paths, &pack)?;
+    let ids = pack_mod_ids(paths, &pack);
+    restore_needed(paths, &mut index, &ids, reporter);
     if !index.mods.iter().any(|m| m.enabled) {
         return Ok(());
     }
+    let enabled = enabled_projects(&index);
 
     // Modrinth mods: pack/server rules and the Minecraft version.
     let projects: Vec<String> = index
@@ -930,8 +990,11 @@ async fn sync_inner(
             continue;
         };
         let verdict = pack.verdict_for(m, &info);
+        let is_dep = needed(m, &enabled);
         if !verdict.allowed() {
-            disable(paths, m, verdict.reason().to_string(), reporter);
+            if !is_dep {
+                disable(paths, m, verdict.reason().to_string(), reporter);
+            }
             continue;
         }
         let stale = match &verdict {
@@ -948,7 +1011,7 @@ async fn sync_inner(
                 icon: m.icon.clone(),
                 required_by: None,
             }),
-            Err(_) if !matches!(verdict, Verdict::Server(_)) => disable(
+            Err(_) if !is_dep && !matches!(verdict, Verdict::Server(_)) => disable(
                 paths,
                 m,
                 format!("нет версии для Minecraft {}", pack.minecraft),
@@ -965,15 +1028,17 @@ async fn sync_inner(
         }
     }
 
-    // Any enabled jar whose Fabric id the pack already has would crash the game.
-    let ids = pack_mod_ids(paths, &pack);
+    // Any enabled jar whose Fabric id the pack already has would crash the
+    // game. This one applies to dependencies too: the pack's copy serves them.
     for m in index.mods.iter_mut().filter(|m| m.enabled) {
         if m.mod_id.is_none() {
             m.mod_id = read_jar(&file_path(paths, m)).map(|i| i.id);
         }
         if m.mod_id.as_ref().is_some_and(|id| ids.contains(id)) {
             disable(paths, m, "уже есть в сборке MineHouse".into(), reporter);
-        } else if pack.clashes_with_server(m.mod_id.as_deref(), m.version_id.as_deref()) {
+        } else if !needed(m, &enabled)
+            && pack.clashes_with_server(m.mod_id.as_deref(), m.version_id.as_deref())
+        {
             disable(paths, m, SERVER_CLASH.into(), reporter);
         }
     }
@@ -1106,6 +1171,41 @@ mod tests {
             .unwrap_err();
         assert!(format!("{err}").contains("уже есть в сборке"));
         assert!(!mods.join("fabric-api-old.jar").exists());
+    }
+
+    #[test]
+    fn dependency_turned_off_by_launcher_comes_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::new(dir.path());
+        let mods = paths.game_dir().join("mods");
+        std::fs::create_dir_all(&mods).unwrap();
+        let m = |file: &str, project: &str, by: &[&str], enabled: bool, note: bool| UserMod {
+            file: file.into(),
+            enabled,
+            title: file.into(),
+            project: Some(project.into()),
+            required_by: by.iter().map(|s| s.to_string()).collect(),
+            note: note.then(|| "Нужен и на сервере".to_string()),
+            ..Default::default()
+        };
+        let mut index = Index {
+            mods: vec![
+                m("a.jar", "A", &[], true, false),
+                m("lib.jar", "L", &["A"], false, true),
+                m("lib2.jar", "L2", &["L"], false, true),
+                m("hand.jar", "H", &["A"], false, false),
+                m("orphan.jar", "O", &["X"], false, true),
+            ],
+        };
+        for u in &index.mods {
+            std::fs::write(file_path(&paths, u), b"").unwrap();
+        }
+        restore_needed(&paths, &mut index, &HashSet::new(), &Reporter::silent());
+        let on: Vec<bool> = index.mods.iter().map(|u| u.enabled).collect();
+        assert_eq!(on, [true, true, true, false, false]);
+        assert!(mods.join("lib.jar").exists());
+        assert!(mods.join("lib2.jar").exists());
+        assert!(index.mods[1].note.is_none());
     }
 
     #[test]

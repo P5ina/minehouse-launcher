@@ -99,6 +99,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.4.4" date="2026-11-06">
+      <description>
+        <p>Dependencies of a mod that is on are never turned off automatically, and ones turned off earlier come back.</p>
+      </description>
+    </release>
     <release version="0.4.3" date="2026-11-06">
       <description>
         <p>Libraries that other mods depend on are no longer turned off before launch.</p>
