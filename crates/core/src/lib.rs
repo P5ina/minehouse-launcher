@@ -15,6 +15,7 @@ pub mod launch;
 pub mod minecraft;
 pub mod modpack;
 pub mod modrinth;
+pub mod packs;
 pub mod paths;
 pub mod ping;
 pub mod progress;

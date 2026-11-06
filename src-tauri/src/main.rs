@@ -6,6 +6,7 @@ mod account;
 use std::sync::Arc;
 
 use minehouse_core::auth::{self, DeviceCode};
+use minehouse_core::packs::{self, Kind};
 use minehouse_core::paths::Paths;
 use minehouse_core::progress::{Event, Reporter};
 use minehouse_core::settings::Settings;
@@ -382,6 +383,265 @@ async fn open_mods_dir(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
         .map_err(|e| e.to_string())
 }
 
+// ---- Resource packs and shaders -------------------------------------------
+
+/// Iris (and Sodium under it) are optional mods of the pack; shaders need them.
+#[derive(Serialize)]
+struct IrisState {
+    /// Iris is on in the pack (or always part of it).
+    ready: bool,
+    /// What else has to be turned on for it, by name.
+    missing: Vec<String>,
+}
+
+fn iris_state(pack: &Pack) -> IrisState {
+    match pack.options.iter().find(|o| o.id == "iris") {
+        Some(o) => {
+            let mut missing = o.missing.clone();
+            if !o.enabled {
+                missing.push(o.name.clone());
+            }
+            IrisState {
+                ready: missing.is_empty(),
+                missing,
+            }
+        }
+        None => {
+            let ready = pack.files.iter().any(|f| f.starts_with("iris"));
+            IrisState {
+                ready,
+                missing: if ready { vec![] } else { vec!["Iris".into()] },
+            }
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct PacksListing {
+    packs: Vec<packs::ContentPack>,
+    minecraft: String,
+    iris: IrisState,
+}
+
+fn kind(s: &str) -> Res<Kind> {
+    Kind::parse(s).map_err(err)
+}
+
+#[tauri::command]
+async fn packs_list(app: State<'_, Arc<App>>, kind: String) -> Res<PacksListing> {
+    let kind = self::kind(&kind)?;
+    let pack = app.pack(false).await?;
+    Ok(PacksListing {
+        packs: packs::list(&app.paths, kind).map_err(err)?,
+        minecraft: pack.minecraft.clone(),
+        iris: iris_state(&pack),
+    })
+}
+
+#[derive(Serialize)]
+struct PackHit {
+    #[serde(flatten)]
+    hit: modrinth::SearchHit,
+    installed: bool,
+}
+
+#[derive(Serialize)]
+struct PackSearch {
+    hits: Vec<PackHit>,
+    total: u64,
+}
+
+#[tauri::command]
+async fn packs_search(
+    app: State<'_, Arc<App>>,
+    kind: String,
+    query: String,
+    offset: u32,
+) -> Res<PackSearch> {
+    let kind = self::kind(&kind)?;
+    let pack = app.pack(false).await?;
+    let (hits, total) = modrinth::search_content(
+        &app.client,
+        kind.project_type(),
+        kind.category(),
+        &query,
+        &pack.minecraft,
+        offset,
+    )
+    .await
+    .map_err(err)?;
+    let installed = packs::installed_projects(&app.paths, kind);
+    Ok(PackSearch {
+        total,
+        hits: hits
+            .into_iter()
+            .map(|hit| PackHit {
+                installed: installed.contains(&hit.project_id),
+                hit,
+            })
+            .collect(),
+    })
+}
+
+/// The game reads these files only at start; while it runs, its own screens own them.
+fn not_playing(app: &App) -> Res<tokio::sync::MutexGuard<'_, ()>> {
+    app.busy
+        .try_lock()
+        .map_err(|_| "Закройте игру: пока она запущена, паки меняются в её настройках".to_string())
+}
+
+#[tauri::command]
+async fn packs_install(
+    app: State<'_, Arc<App>>,
+    kind: String,
+    project: String,
+    icon: Option<String>,
+) -> Res<String> {
+    let kind = self::kind(&kind)?;
+    let _guard = not_playing(&app)?;
+    let pack = app.pack(false).await?;
+    packs::install_modrinth(
+        &app.client,
+        &app.paths,
+        kind,
+        &project,
+        icon,
+        &pack.minecraft,
+    )
+    .await
+    .map_err(err)
+}
+
+#[derive(Serialize)]
+struct Added {
+    lines: Vec<String>,
+    /// What the last added file was, for the tab to show.
+    kind: Option<Kind>,
+}
+
+#[tauri::command]
+async fn packs_add_files(app: State<'_, Arc<App>>, files: Vec<String>) -> Res<Added> {
+    let _guard = not_playing(&app)?;
+    let mut out = Added {
+        lines: Vec::new(),
+        kind: None,
+    };
+    for f in files {
+        let path = std::path::PathBuf::from(&f);
+        match packs::add_local(&app.client, &app.paths, &path).await {
+            Ok((kind, title)) => {
+                out.kind = Some(kind);
+                out.lines.push(format!(
+                    "Добавлен {}: {title}",
+                    match kind {
+                        Kind::Resource => "ресурспак",
+                        Kind::Shader => "шейдер",
+                    }
+                ));
+            }
+            Err(e) => out.lines.push(format!("{e:#}")),
+        }
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+async fn packs_pick_files(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<Added> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    handle
+        .dialog()
+        .file()
+        .set_title("Выберите ресурспаки или шейдеры")
+        .add_filter("Ресурспак или шейдер", &["zip"])
+        .pick_files(move |files| {
+            let _ = tx.send(files);
+        });
+    let Some(files) = rx.await.ok().flatten() else {
+        return Ok(Added {
+            lines: Vec::new(),
+            kind: None,
+        });
+    };
+    let files = files
+        .into_iter()
+        .filter_map(|f| f.into_path().ok())
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    packs_add_files(app, files).await
+}
+
+#[tauri::command]
+async fn packs_toggle(
+    app: State<'_, Arc<App>>,
+    kind: String,
+    file: String,
+    enabled: bool,
+) -> Res<()> {
+    let kind = self::kind(&kind)?;
+    let _guard = not_playing(&app)?;
+    packs::set_enabled(&app.paths, kind, &file, enabled).map_err(err)
+}
+
+#[tauri::command]
+async fn packs_move(app: State<'_, Arc<App>>, file: String, up: bool) -> Res<()> {
+    let _guard = not_playing(&app)?;
+    packs::move_resource_pack(&app.paths, &file, up).map_err(err)
+}
+
+#[tauri::command]
+async fn packs_remove(app: State<'_, Arc<App>>, kind: String, file: String) -> Res<()> {
+    let kind = self::kind(&kind)?;
+    let _guard = not_playing(&app)?;
+    packs::remove(&app.paths, kind, &file).map_err(err)
+}
+
+#[tauri::command]
+async fn packs_update(app: State<'_, Arc<App>>, kind: String) -> Res<Vec<String>> {
+    let kind = self::kind(&kind)?;
+    let _guard = not_playing(&app)?;
+    let pack = app.pack(false).await?;
+    packs::update_all(&app.client, &app.paths, kind, &pack.minecraft)
+        .await
+        .map_err(err)
+}
+
+/// Turns on Iris and the optional mods it needs (Sodium), downloading them now.
+#[tauri::command]
+async fn packs_enable_iris(app: State<'_, Arc<App>>) -> Res<()> {
+    let _guard = not_busy(&app)?;
+    let manifest = app.manifest(false).await?;
+    let Some(iris) = manifest.options.iter().find(|o| o.id == "iris") else {
+        return Err("В сборке нет Iris".into());
+    };
+    let mut ids = iris.requires.clone();
+    ids.push("iris".into());
+    for id in ids {
+        user_mods::set_pack_option(
+            &app.client,
+            &app.paths,
+            &manifest,
+            &id,
+            true,
+            &Reporter::silent(),
+        )
+        .await
+        .map_err(err)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn open_packs_dir(app: State<'_, Arc<App>>, handle: AppHandle, kind: String) -> Res<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = self::kind(&kind)?.dir(&app.paths);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    handle
+        .opener()
+        .open_path(dir.to_string_lossy(), None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 /// Sign-in refresh → install/update → launch. Progress goes out as `progress` events.
 #[tauri::command]
 async fn play(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
@@ -475,6 +735,17 @@ fn main() {
             mods_pack_option,
             mods_remove,
             mods_update,
+            packs_list,
+            packs_search,
+            packs_install,
+            packs_add_files,
+            packs_pick_files,
+            packs_toggle,
+            packs_move,
+            packs_remove,
+            packs_update,
+            packs_enable_iris,
+            open_packs_dir,
             play
         ])
         .run(tauri::generate_context!())

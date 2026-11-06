@@ -43,7 +43,7 @@ import { cn } from "@/lib/utils"
 export type ModsTab = "mine" | "find"
 type Msg = { text: string; error: boolean } | null
 
-function ModIcon({ url, title }: { url?: string | null; title: string }) {
+export function ModIcon({ url, title }: { url?: string | null; title: string }) {
   const [broken, setBroken] = useState(false)
   if (url && !broken)
     return (
@@ -63,7 +63,7 @@ function ModIcon({ url, title }: { url?: string | null; title: string }) {
   )
 }
 
-function Row({
+export function Row({
   dim,
   children,
 }: {
