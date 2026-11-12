@@ -94,7 +94,7 @@ pub async fn install(
     reporter: &Reporter,
 ) -> Result<PathBuf> {
     let home = paths.runtime(component);
-    let all_cache = paths.root.join("runtime").join("all.json");
+    let all_cache = paths.runtimes().join("all.json");
     let all: AllRuntimes = http::get_json_cached(client, RUNTIMES, &all_cache).await?;
     let entry = all
         .get(platform())

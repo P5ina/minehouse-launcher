@@ -3,6 +3,7 @@
 
 mod account;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use minehouse_core::auth::{self, DeviceCode};
@@ -11,13 +12,14 @@ use minehouse_core::paths::Paths;
 use minehouse_core::progress::{Event, Reporter};
 use minehouse_core::settings::Settings;
 use minehouse_core::user_mods::{self, Pack};
-use minehouse_core::{http, install, launch, modpack, modrinth, ping};
+use minehouse_core::{http, install, instances, launch, modpack, modrinth, ping};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
 
 struct App {
-    paths: Paths,
+    /// Launcher config folder; game files go wherever [`instances::Config`] says.
+    root: PathBuf,
     client: http::ReqwestClient,
     busy: Mutex<()>,
     /// The last manifest fetch, for the mod browser.
@@ -25,10 +27,19 @@ struct App {
 }
 
 impl App {
+    fn config(&self) -> instances::Config {
+        instances::Config::load(&self.root)
+    }
+
+    /// Paths of the selected instance, read fresh: the player can switch it.
+    fn paths(&self) -> Paths {
+        self.config().paths()
+    }
+
     async fn manifest(&self, refresh: bool) -> Res<modpack::Manifest> {
         let mut cached = self.manifest.lock().await;
         if refresh || cached.is_none() {
-            let m = modpack::fetch_manifest(&self.client, &self.paths)
+            let m = modpack::fetch_manifest(&self.client, &self.paths())
                 .await
                 .map_err(err)?;
             *cached = Some(m);
@@ -38,7 +49,7 @@ impl App {
 
     /// Pack/server facts with the player's choice of optional mods.
     async fn pack(&self, refresh: bool) -> Res<Pack> {
-        Ok(Pack::load(&self.manifest(refresh).await?, &self.paths))
+        Ok(Pack::load(&self.manifest(refresh).await?, &self.paths()))
     }
 }
 
@@ -50,6 +61,16 @@ struct Info {
     settings: Settings,
     pack_version: Option<String>,
     game_dir: String,
+    instances: Vec<instances::Instance>,
+    active_instance: String,
+    /// Where Java, Minecraft and `instances/` are.
+    data_dir: String,
+    /// The system app-data folder, for «вернуть как было».
+    default_data_dir: String,
+    /// False until the first-start onboarding is done.
+    setup_done: bool,
+    /// False inside Flatpak: the sandbox only writes to its own folder.
+    can_move_data: bool,
     /// False inside Flatpak: `flatpak update` ships the updates there.
     self_update: bool,
 }
@@ -73,7 +94,9 @@ fn err(e: anyhow::Error) -> String {
 
 #[tauri::command]
 async fn info(app: State<'_, Arc<App>>) -> Res<Info> {
-    let account = account::load(&app.paths).map(|a| AccountInfo {
+    let config = app.config();
+    let paths = config.paths();
+    let account = account::load(&paths).map(|a| AccountInfo {
         name: a.session.name,
         uuid: a.session.uuid,
     });
@@ -81,11 +104,17 @@ async fn info(app: State<'_, Arc<App>>) -> Res<Info> {
         version: minehouse_core::LAUNCHER_VERSION,
         login_configured: auth::client_id().is_some(),
         account,
-        settings: Settings::load(&app.paths),
-        pack_version: minehouse_core::modpack::read_state(&app.paths)
+        settings: Settings::load(&paths),
+        pack_version: minehouse_core::modpack::read_state(&paths)
             .await
             .map(|s| s.version),
-        game_dir: app.paths.game_dir().to_string_lossy().into_owned(),
+        game_dir: paths.game_dir().to_string_lossy().into_owned(),
+        active_instance: config.active().id.clone(),
+        data_dir: config.data_dir().to_string_lossy().into_owned(),
+        default_data_dir: config.root().to_string_lossy().into_owned(),
+        setup_done: config.setup_done,
+        can_move_data: !in_flatpak(),
+        instances: config.instances,
         self_update: !in_flatpak(),
     })
 }
@@ -107,7 +136,7 @@ async fn login_finish(app: State<'_, Arc<App>>, code: DeviceCode) -> Res<Account
     let account = auth::finish_device_code(&app.client, &code)
         .await
         .map_err(err)?;
-    account::save(&app.paths, &account).map_err(err)?;
+    account::save(&app.paths(), &account).map_err(err)?;
     Ok(AccountInfo {
         name: account.session.name,
         uuid: account.session.uuid,
@@ -116,7 +145,7 @@ async fn login_finish(app: State<'_, Arc<App>>, code: DeviceCode) -> Res<Account
 
 #[tauri::command]
 async fn logout(app: State<'_, Arc<App>>) -> Res<()> {
-    account::clear(&app.paths);
+    account::clear(&app.paths());
     Ok(())
 }
 
@@ -125,10 +154,10 @@ async fn save_settings(app: State<'_, Arc<App>>, settings: Settings) -> Res<()> 
     let mut s = settings;
     s.memory_mb = s.memory_mb.clamp(1024, 32768);
     // Alts are changed only by the profile_* commands.
-    let stored = Settings::load(&app.paths);
+    let stored = Settings::load(&app.paths());
     s.offline_profiles = stored.offline_profiles;
     s.active_profile = stored.active_profile;
-    s.save(&app.paths).map_err(err)
+    s.save(&app.paths()).map_err(err)
 }
 
 /// Adds an offline profile (alt). Only with a signed-in Microsoft account:
@@ -136,42 +165,42 @@ async fn save_settings(app: State<'_, Arc<App>>, settings: Settings) -> Res<()> 
 #[tauri::command]
 async fn profile_add(app: State<'_, Arc<App>>, name: String) -> Res<()> {
     let name = name.trim().to_string();
-    let main = account::load(&app.paths)
+    let main = account::load(&app.paths())
         .ok_or("Твинков можно добавить только после входа через Microsoft")?;
     if !auth::valid_nickname(&name) {
         return Err("Ник: от 3 до 16 латинских букв, цифр или _".into());
     }
-    let mut s = Settings::load(&app.paths);
+    let mut s = Settings::load(&app.paths());
     let taken = |n: &str| n.eq_ignore_ascii_case(&name);
     if taken(&main.session.name) || s.offline_profiles.iter().any(|n| taken(n)) {
         return Err("Такой ник уже есть".into());
     }
     s.offline_profiles.push(name.clone());
     s.active_profile = Some(name);
-    s.save(&app.paths).map_err(err)
+    s.save(&app.paths()).map_err(err)
 }
 
 #[tauri::command]
 async fn profile_remove(app: State<'_, Arc<App>>, name: String) -> Res<()> {
-    let mut s = Settings::load(&app.paths);
+    let mut s = Settings::load(&app.paths());
     s.offline_profiles.retain(|n| n != &name);
     if s.active_profile.as_deref() == Some(name.as_str()) {
         s.active_profile = None;
     }
-    s.save(&app.paths).map_err(err)
+    s.save(&app.paths()).map_err(err)
 }
 
 /// `None` = play as the Microsoft account.
 #[tauri::command]
 async fn profile_select(app: State<'_, Arc<App>>, name: Option<String>) -> Res<()> {
-    let mut s = Settings::load(&app.paths);
+    let mut s = Settings::load(&app.paths());
     if let Some(n) = &name {
         if !s.offline_profiles.contains(n) {
             return Err("Нет такого твинка".into());
         }
     }
     s.active_profile = name;
-    s.save(&app.paths).map_err(err)
+    s.save(&app.paths()).map_err(err)
 }
 
 /// Latest posts from www.minehouse.pro/news for the home screen.
@@ -205,7 +234,7 @@ async fn open_url(handle: AppHandle, url: String) -> Res<()> {
 #[tauri::command]
 async fn open_game_dir(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
     use tauri_plugin_opener::OpenerExt;
-    let dir = app.paths.game_dir();
+    let dir = app.paths().game_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     handle
         .opener()
@@ -224,7 +253,7 @@ fn not_busy(app: &App) -> Res<tokio::sync::MutexGuard<'_, ()>> {
 #[tauri::command]
 async fn mods_list(app: State<'_, Arc<App>>) -> Res<user_mods::Listing> {
     let pack = app.pack(true).await?;
-    user_mods::list(&app.paths, &pack).map_err(err)
+    user_mods::list(&app.paths(), &pack).map_err(err)
 }
 
 #[derive(Serialize)]
@@ -254,7 +283,7 @@ async fn mods_search(app: State<'_, Arc<App>>, query: String, offset: u32) -> Re
     let (hits, total) = modrinth::search(&app.client, &query, &pack.minecraft, offset, &exclude)
         .await
         .map_err(err)?;
-    let installed: std::collections::HashSet<String> = user_mods::list(&app.paths, &pack)
+    let installed: std::collections::HashSet<String> = user_mods::list(&app.paths(), &pack)
         .map_err(err)?
         .mods
         .into_iter()
@@ -285,7 +314,7 @@ async fn mods_install(
 ) -> Res<Vec<String>> {
     let _guard = not_busy(&app)?;
     let pack = app.pack(false).await?;
-    user_mods::install_modrinth(&app.client, &app.paths, &pack, &project, icon)
+    user_mods::install_modrinth(&app.client, &app.paths(), &pack, &project, icon)
         .await
         .map_err(err)
 }
@@ -300,7 +329,7 @@ async fn mods_add_files(app: State<'_, Arc<App>>, files: Vec<String>) -> Res<Vec
     for f in files {
         let path = std::path::PathBuf::from(&f);
         out.push(
-            match user_mods::add_local(&app.client, &app.paths, &pack, &path).await {
+            match user_mods::add_local(&app.client, &app.paths(), &pack, &path).await {
                 Ok(title) => format!("Добавлен: {title}"),
                 Err(e) => format!("{e:#}"),
             },
@@ -336,7 +365,7 @@ async fn mods_pick_files(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<Vec
 async fn mods_toggle(app: State<'_, Arc<App>>, file: String, enabled: bool) -> Res<()> {
     let _guard = not_busy(&app)?;
     let pack = app.pack(false).await?;
-    user_mods::set_enabled(&app.paths, &pack, &file, enabled).map_err(err)
+    user_mods::set_enabled(&app.paths(), &pack, &file, enabled).map_err(err)
 }
 
 /// Turns an optional mod of the pack on or off (downloads or removes it now).
@@ -346,7 +375,7 @@ async fn mods_pack_option(app: State<'_, Arc<App>>, id: String, enabled: bool) -
     let manifest = app.manifest(false).await?;
     user_mods::set_pack_option(
         &app.client,
-        &app.paths,
+        &app.paths(),
         &manifest,
         &id,
         enabled,
@@ -360,14 +389,14 @@ async fn mods_pack_option(app: State<'_, Arc<App>>, id: String, enabled: bool) -
 async fn mods_remove(app: State<'_, Arc<App>>, file: String) -> Res<()> {
     let _guard = not_busy(&app)?;
     let pack = app.pack(false).await?;
-    user_mods::remove(&app.paths, &pack, &file).map_err(err)
+    user_mods::remove(&app.paths(), &pack, &file).map_err(err)
 }
 
 #[tauri::command]
 async fn mods_update(app: State<'_, Arc<App>>) -> Res<Vec<String>> {
     let _guard = not_busy(&app)?;
     let pack = app.pack(true).await?;
-    user_mods::update_all(&app.client, &app.paths, &pack)
+    user_mods::update_all(&app.client, &app.paths(), &pack)
         .await
         .map_err(err)
 }
@@ -375,7 +404,7 @@ async fn mods_update(app: State<'_, Arc<App>>) -> Res<Vec<String>> {
 #[tauri::command]
 async fn open_mods_dir(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
     use tauri_plugin_opener::OpenerExt;
-    let dir = app.paths.game_dir().join("mods");
+    let dir = app.paths().game_dir().join("mods");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     handle
         .opener()
@@ -432,7 +461,7 @@ async fn packs_list(app: State<'_, Arc<App>>, kind: String) -> Res<PacksListing>
     let kind = self::kind(&kind)?;
     let pack = app.pack(false).await?;
     Ok(PacksListing {
-        packs: packs::list(&app.paths, kind).map_err(err)?,
+        packs: packs::list(&app.paths(), kind).map_err(err)?,
         minecraft: pack.minecraft.clone(),
         iris: iris_state(&pack),
     })
@@ -470,7 +499,7 @@ async fn packs_search(
     )
     .await
     .map_err(err)?;
-    let installed = packs::installed_projects(&app.paths, kind);
+    let installed = packs::installed_projects(&app.paths(), kind);
     Ok(PackSearch {
         total,
         hits: hits
@@ -502,7 +531,7 @@ async fn packs_install(
     let pack = app.pack(false).await?;
     packs::install_modrinth(
         &app.client,
-        &app.paths,
+        &app.paths(),
         kind,
         &project,
         icon,
@@ -528,7 +557,7 @@ async fn packs_add_files(app: State<'_, Arc<App>>, files: Vec<String>) -> Res<Ad
     };
     for f in files {
         let path = std::path::PathBuf::from(&f);
-        match packs::add_local(&app.client, &app.paths, &path).await {
+        match packs::add_local(&app.client, &app.paths(), &path).await {
             Ok((kind, title)) => {
                 out.kind = Some(kind);
                 out.lines.push(format!(
@@ -580,20 +609,20 @@ async fn packs_toggle(
 ) -> Res<()> {
     let kind = self::kind(&kind)?;
     let _guard = not_playing(&app)?;
-    packs::set_enabled(&app.paths, kind, &file, enabled).map_err(err)
+    packs::set_enabled(&app.paths(), kind, &file, enabled).map_err(err)
 }
 
 #[tauri::command]
 async fn packs_move(app: State<'_, Arc<App>>, file: String, up: bool) -> Res<()> {
     let _guard = not_playing(&app)?;
-    packs::move_resource_pack(&app.paths, &file, up).map_err(err)
+    packs::move_resource_pack(&app.paths(), &file, up).map_err(err)
 }
 
 #[tauri::command]
 async fn packs_remove(app: State<'_, Arc<App>>, kind: String, file: String) -> Res<()> {
     let kind = self::kind(&kind)?;
     let _guard = not_playing(&app)?;
-    packs::remove(&app.paths, kind, &file).map_err(err)
+    packs::remove(&app.paths(), kind, &file).map_err(err)
 }
 
 #[tauri::command]
@@ -601,7 +630,7 @@ async fn packs_update(app: State<'_, Arc<App>>, kind: String) -> Res<Vec<String>
     let kind = self::kind(&kind)?;
     let _guard = not_playing(&app)?;
     let pack = app.pack(false).await?;
-    packs::update_all(&app.client, &app.paths, kind, &pack.minecraft)
+    packs::update_all(&app.client, &app.paths(), kind, &pack.minecraft)
         .await
         .map_err(err)
 }
@@ -619,7 +648,7 @@ async fn packs_enable_iris(app: State<'_, Arc<App>>) -> Res<()> {
     for id in ids {
         user_mods::set_pack_option(
             &app.client,
-            &app.paths,
+            &app.paths(),
             &manifest,
             &id,
             true,
@@ -634,12 +663,126 @@ async fn packs_enable_iris(app: State<'_, Arc<App>>) -> Res<()> {
 #[tauri::command]
 async fn open_packs_dir(app: State<'_, Arc<App>>, handle: AppHandle, kind: String) -> Res<()> {
     use tauri_plugin_opener::OpenerExt;
-    let dir = self::kind(&kind)?.dir(&app.paths);
+    let dir = self::kind(&kind)?.dir(&app.paths());
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     handle
         .opener()
         .open_path(dir.to_string_lossy(), None::<&str>)
         .map_err(|e| e.to_string())
+}
+
+// ---- Instances («сборки») and the game folder --------------------------------
+
+/// Switching or deleting an instance while the game runs from it would pull
+/// files from under it.
+fn not_running(app: &App) -> Res<tokio::sync::MutexGuard<'_, ()>> {
+    app.busy
+        .try_lock()
+        .map_err(|_| "Закройте игру, чтобы менять сборки".to_string())
+}
+
+#[tauri::command]
+async fn instance_create(app: State<'_, Arc<App>>, name: String) -> Res<instances::Instance> {
+    let _guard = not_running(&app)?;
+    app.config().create(&name).map_err(err)
+}
+
+/// Copies mods, packs, options and worlds; can take a while with big worlds.
+#[tauri::command]
+async fn instance_duplicate(
+    app: State<'_, Arc<App>>,
+    id: String,
+    name: String,
+) -> Res<instances::Instance> {
+    let _guard = not_running(&app)?;
+    let mut config = app.config();
+    tokio::task::spawn_blocking(move || config.duplicate(&id, &name))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
+}
+
+#[tauri::command]
+async fn instance_rename(app: State<'_, Arc<App>>, id: String, name: String) -> Res<()> {
+    app.config().rename(&id, &name).map_err(err)
+}
+
+#[tauri::command]
+async fn instance_select(app: State<'_, Arc<App>>, id: String) -> Res<()> {
+    let _guard = not_running(&app)?;
+    app.config().select(&id).map_err(err)
+}
+
+#[tauri::command]
+async fn instance_remove(app: State<'_, Arc<App>>, id: String) -> Res<()> {
+    let _guard = not_running(&app)?;
+    let mut config = app.config();
+    tokio::task::spawn_blocking(move || config.remove(&id))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
+}
+
+#[tauri::command]
+async fn open_instance_dir(app: State<'_, Arc<App>>, handle: AppHandle, id: String) -> Res<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let config = app.config();
+    let dir = config.get(&id).ok_or("Нет такой сборки")?.dir.clone();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    handle
+        .opener()
+        .open_path(dir.to_string_lossy(), None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+/// Folder picker for the game folder. Returns where files would really go
+/// (a busy folder gets a `MineHouse` subfolder), or `None` if cancelled.
+#[tauri::command]
+async fn data_dir_pick(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    handle
+        .dialog()
+        .file()
+        .set_title("Куда ставить игру и сборки")
+        .pick_folder(move |dir| {
+            let _ = tx.send(dir);
+        });
+    let Some(dir) = rx.await.ok().flatten() else {
+        return Ok(None);
+    };
+    let dir = dir.into_path().map_err(|e| e.to_string())?;
+    let resolved = app.config().resolve_data_dir(&dir).map_err(err)?;
+    Ok(Some(resolved.to_string_lossy().into_owned()))
+}
+
+/// Moves Java, Minecraft and the instances to `path`, reporting each step as
+/// a `progress` stage. Also ends the first-start setup.
+#[tauri::command]
+async fn data_dir_set(app: State<'_, Arc<App>>, handle: AppHandle, path: String) -> Res<String> {
+    if in_flatpak() {
+        return Err("Во Flatpak папку игры менять нельзя".into());
+    }
+    let _guard = not_running(&app)?;
+    let mut config = app.config();
+    let used = tokio::task::spawn_blocking(move || {
+        let step = move |name: String| {
+            let _ = handle.emit("progress", Event::Stage { name });
+        };
+        config.set_data_dir(std::path::Path::new(&path), &step)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(err)?;
+    Ok(used.to_string_lossy().into_owned())
+}
+
+/// The first-start onboarding is done (or skipped).
+#[tauri::command]
+async fn setup_finish(app: State<'_, Arc<App>>, done: bool) -> Res<()> {
+    let mut config = app.config();
+    config.setup_done = done;
+    config.save().map_err(err)
 }
 
 /// Sign-in refresh → install/update → launch. Progress goes out as `progress` events.
@@ -654,15 +797,20 @@ async fn play(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
         let _ = emitter.emit("progress", e);
     });
 
+    // One instance for the whole run, even if the player selects another meanwhile.
+    let config = app.config();
+    let paths = config.paths();
+    reporter.log(format!("Сборка «{}»", config.active().name));
+
     reporter.stage("Входим в аккаунт");
-    let stored = account::load(&app.paths).ok_or("Сначала войдите через Microsoft")?;
+    let stored = account::load(&paths).ok_or("Сначала войдите через Microsoft")?;
     // Refreshing the Microsoft account also proves the game is owned: it fails
     // without a Minecraft profile. Alts are only launched after that.
     let account = auth::refresh(&app.client, &stored).await.map_err(err)?;
-    account::save(&app.paths, &account).map_err(err)?;
+    account::save(&paths, &account).map_err(err)?;
 
-    let installed = install::install(&app.paths, &reporter).await.map_err(err)?;
-    let settings = Settings::load(&app.paths);
+    let installed = install::install(&paths, &reporter).await.map_err(err)?;
+    let settings = Settings::load(&paths);
     let session = match &settings.active_profile {
         Some(alt) if settings.offline_profiles.contains(alt) => {
             reporter.log(format!("Играем за твинка {alt} (офлайн-профиль)"));
@@ -678,7 +826,7 @@ async fn play(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
             let _ = w.hide();
         }
     }
-    let status = launch::launch(&app.paths, &installed, &session, &settings, &reporter)
+    let status = launch::launch(&paths, &installed, &session, &settings, &reporter)
         .await
         .map_err(err)?;
     if let Some(w) = handle.get_webview_window("main") {
@@ -694,9 +842,9 @@ async fn play(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
 }
 
 fn main() {
-    let paths = Paths::default_location().expect("data directory");
+    let root = Paths::default_root().expect("data directory");
     let app = Arc::new(App {
-        paths,
+        root,
         client: http::client(),
         busy: Mutex::new(()),
         manifest: Mutex::new(None),
@@ -746,6 +894,15 @@ fn main() {
             packs_update,
             packs_enable_iris,
             open_packs_dir,
+            instance_create,
+            instance_duplicate,
+            instance_rename,
+            instance_select,
+            instance_remove,
+            open_instance_dir,
+            data_dir_pick,
+            data_dir_set,
+            setup_finish,
             play
         ])
         .run(tauri::generate_context!())

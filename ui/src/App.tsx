@@ -3,6 +3,7 @@ import { useState } from "react"
 import { BottomBar } from "@/components/launcher/bottom-bar"
 import { DropOverlay } from "@/components/launcher/drop-overlay"
 import { Hero } from "@/components/launcher/hero"
+import { Onboarding } from "@/components/launcher/onboarding"
 import { NewsStrip } from "@/components/launcher/news-strip"
 import { LogPanel } from "@/components/launcher/log-panel"
 import { LoginDialog } from "@/components/launcher/login-dialog"
@@ -30,6 +31,9 @@ export function App() {
     dropped: [],
   })
   const [showLog, setShowLog] = useState(false)
+  // Знакомство: само при первом запуске, ещё раз из настроек.
+  const [tour, setTour] = useState(false)
+  const onboarding = !!l.info && (tour || !l.info.setup_done)
 
   const onPlay = () => {
     if (!l.info?.account) setLoginOpen(true)
@@ -40,7 +44,7 @@ export function App() {
     <TooltipProvider delay={300}>
       <div className="relative flex h-full flex-col">
         <UpdateBanner enabled={l.info?.self_update ?? false} />
-        <TopBar onLog={l.pushLog} />
+        <TopBar info={l.info} playing={l.playing} onLog={l.pushLog} onChanged={l.refresh} />
         <main className="relative isolate flex min-h-0 flex-1 flex-col">
           <Hero server={l.server} paused={l.playing} compact={showLog} />
           {showLog ? <LogPanel lines={l.log} /> : <NewsStrip />}
@@ -59,6 +63,9 @@ export function App() {
           onLogin={() => setLoginOpen(true)}
           onChanged={l.refresh}
         />
+        {onboarding && l.info && (
+          <Onboarding info={l.info} onChanged={l.refresh} onClose={() => setTour(false)} onPlay={l.play} />
+        )}
       </div>
 
       <LoginDialog
@@ -72,7 +79,9 @@ export function App() {
           open={settingsOpen}
           onOpenChange={setSettingsOpen}
           info={l.info}
+          playing={l.playing}
           onChanged={l.refresh}
+          onOnboarding={() => setTour(true)}
         />
       )}
       <ModsDialog

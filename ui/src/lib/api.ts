@@ -22,6 +22,24 @@ export type Info = {
   settings: Settings
   /** false in Flatpak: updates come from flatpak update */
   self_update: boolean
+  /** .minecraft выбранной сборки */
+  game_dir: string
+  instances: Instance[]
+  active_instance: string
+  /** Папка с Java, Minecraft и сборками */
+  data_dir: string
+  default_data_dir: string
+  /** false — показать знакомство при первом запуске */
+  setup_done: boolean
+  /** false во Flatpak: там папку игры не перенести */
+  can_move_data: boolean
+}
+
+/** Сборка: своя папка игры с модами, паками, настройками и мирами. */
+export type Instance = { id: string; name: string; dir: string; created_at: number }
+
+export function activeInstance(info: Info | null) {
+  return info?.instances.find((i) => i.id === info.active_instance) ?? info?.instances[0] ?? null
 }
 
 export type ServerStatus = { online: number; max: number }
@@ -83,6 +101,9 @@ export function openUrl(url: string) {
 
 export const LINKS = {
   site: "https://www.minehouse.pro",
+  login: "https://www.minehouse.pro/login",
+  apply: "https://www.minehouse.pro/apply",
+  start: "https://www.minehouse.pro/start",
   wiki: "https://wiki.minehouse.pro",
   discord: "https://discord.gg/gCYGxDzaCb",
 }
