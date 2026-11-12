@@ -120,7 +120,7 @@ pub struct ContentPack {
 }
 
 fn index_path(paths: &Paths) -> PathBuf {
-    paths.root.join("content-packs.json")
+    paths.instance_meta().join("content-packs.json")
 }
 
 fn load_index(paths: &Paths) -> Index {
@@ -131,7 +131,7 @@ fn load_index(paths: &Paths) -> Index {
 }
 
 fn save_index(paths: &Paths, index: &Index) -> Result<()> {
-    std::fs::create_dir_all(&paths.root)?;
+    std::fs::create_dir_all(paths.instance_meta())?;
     std::fs::write(index_path(paths), serde_json::to_vec_pretty(index)?)?;
     Ok(())
 }

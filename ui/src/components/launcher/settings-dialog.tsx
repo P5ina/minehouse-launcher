@@ -1,5 +1,17 @@
 import { useEffect, useState } from "react"
-import { FolderOpen, LogOut } from "lucide-react"
+import { FolderOpen, Loader2, LogOut } from "lucide-react"
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -16,18 +28,26 @@ import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { invoke, memLabel, type Info, type Settings } from "@/lib/api"
 
+import { DataDirField, useMoveDataDir } from "./data-dir"
+
 export function SettingsDialog({
   open,
   onOpenChange,
   info,
+  playing,
   onChanged,
+  onOnboarding,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   info: Info
+  playing: boolean
   onChanged: () => Promise<void>
+  onOnboarding: () => void
 }) {
   const [s, setS] = useState<Settings>(info.settings)
+  const [target, setTarget] = useState<string | null>(null)
+  const mover = useMoveDataDir()
   useEffect(() => {
     if (open) setS(info.settings)
   }, [open, info.settings])
@@ -90,10 +110,42 @@ export function SettingsDialog({
 
         <Separator />
 
+        {info.can_move_data && (
+          <div className="grid gap-2">
+            <Label>Папка для игры и сборок</Label>
+            <DataDirField
+              path={info.data_dir}
+              defaultPath={info.default_data_dir}
+              disabled={playing || mover.moving}
+              onPick={setTarget}
+            />
+            {mover.moving && (
+              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="size-3.5 animate-spin" />
+                {mover.stage}
+              </p>
+            )}
+            {mover.error && (
+              <Alert variant="destructive">
+                <AlertDescription>{mover.error}</AlertDescription>
+              </Alert>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => invoke("open_game_dir")}>
             <FolderOpen />
-            Открыть папку игры
+            Папка сборки
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              onOpenChange(false)
+              onOnboarding()
+            }}
+          >
+            Знакомство с лаунчером
           </Button>
           {info.account && (
             <Button variant="destructive" onClick={logout}>
@@ -108,6 +160,31 @@ export function SettingsDialog({
           <Button onClick={save}>Готово</Button>
         </DialogFooter>
       </DialogContent>
+
+      <AlertDialog open={target !== null} onOpenChange={(o) => !o && setTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Перенести игру?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Java, Minecraft и все сборки с модами и мирами переедут в{" "}
+              <span className="font-mono break-all text-foreground">{target}</span>. На другой диск копирование может
+              занять несколько минут, старая папка удалится только после полной копии.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                const t = target
+                setTarget(null)
+                if (t && (await mover.move(t))) await onChanged()
+              }}
+            >
+              Перенести
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }

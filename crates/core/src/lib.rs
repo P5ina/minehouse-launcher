@@ -10,6 +10,7 @@ pub mod fabric;
 pub mod gamelog;
 pub mod http;
 pub mod install;
+pub mod instances;
 pub mod java;
 pub mod launch;
 pub mod minecraft;

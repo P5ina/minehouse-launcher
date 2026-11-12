@@ -242,7 +242,7 @@ fn modrinth_project_of(url: &str) -> Option<String> {
 }
 
 fn index_path(paths: &Paths) -> PathBuf {
-    paths.root.join("user-mods.json")
+    paths.instance_meta().join("user-mods.json")
 }
 
 fn mods_dir(paths: &Paths) -> PathBuf {
@@ -265,7 +265,7 @@ fn load(paths: &Paths) -> Index {
 }
 
 fn save(paths: &Paths, index: &Index) -> Result<()> {
-    std::fs::create_dir_all(&paths.root)?;
+    std::fs::create_dir_all(paths.instance_meta())?;
     let tmp = index_path(paths).with_extension("json.tmp");
     std::fs::write(&tmp, serde_json::to_vec_pretty(index)?)?;
     std::fs::rename(tmp, index_path(paths))?;

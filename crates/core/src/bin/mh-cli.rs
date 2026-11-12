@@ -3,6 +3,7 @@
 //!   mh-cli ping            server status
 //!   mh-cli login           Microsoft sign-in in the terminal, then play
 //!   mh-cli mods [list | search <q> | add <project> | jar <path> | rm <file> | update | sync]
+//!   mh-cli instances [list | new <name> | use <id> | rm <id> | dir <path>]
 //!   mh-cli packs <resource|shader> [list | search <q> | add <project> | zip <path> | on|off <file> | rm <file> | update]
 use anyhow::Result;
 use minehouse_core::{
@@ -70,7 +71,31 @@ async fn main() -> Result<()> {
         }
         Some("mods") => mods(&paths).await?,
         Some("packs") => content_packs(&paths).await?,
-        _ => eprintln!("usage: mh-cli install | ping | login | mods ... | packs ..."),
+        Some("instances") => instances_cmd()?,
+        _ => {
+            eprintln!("usage: mh-cli install | ping | login | mods ... | packs ... | instances ...")
+        }
+    }
+    Ok(())
+}
+
+fn instances_cmd() -> Result<()> {
+    let mut c = minehouse_core::instances::Config::load(&Paths::default_root()?);
+    let args: Vec<String> = std::env::args().skip(2).collect();
+    let arg = || args.get(1).cloned().unwrap_or_default();
+    match args.first().map(String::as_str).unwrap_or("list") {
+        "list" => {}
+        "new" => drop(c.create(&args[1..].join(" "))?),
+        "use" => c.select(&arg())?,
+        "rm" => c.remove(&arg())?,
+        "dir" => drop(c.set_data_dir(std::path::Path::new(&arg()), &|s| eprintln!("== {s}"))?),
+        other => anyhow::bail!("unknown: instances {other}"),
+    }
+    let c = minehouse_core::instances::Config::load(c.root());
+    eprintln!("data: {}", c.data_dir().display());
+    for i in &c.instances {
+        let mark = if i.id == c.active { "*" } else { " " };
+        println!("{mark} {:<20} {:<24} {}", i.id, i.name, i.dir.display());
     }
     Ok(())
 }

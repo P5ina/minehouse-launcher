@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react"
 import { Check, Copy, ExternalLink } from "lucide-react"
 
 import { CipherReveal } from "@/components/react-bits/cipher-reveal"
@@ -12,7 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { invoke, openUrl, type DeviceCode } from "@/lib/api"
+import { useDeviceLogin } from "@/hooks/use-device-login"
+import { openUrl } from "@/lib/api"
 
 // Вход через Microsoft по коду устройства.
 export function LoginDialog({
@@ -26,51 +26,14 @@ export function LoginDialog({
   configured: boolean
   onDone: () => Promise<void>
 }) {
-  const [code, setCode] = useState<DeviceCode | null>(null)
-  const [error, setError] = useState("")
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    if (!open) return
-    let alive = true
-    setCode(null)
-    setError("")
-    setCopied(false)
-    if (!configured) {
-      setError("Вход через Microsoft ещё не настроен в этой сборке лаунчера.")
-      return
-    }
-    ;(async () => {
-      let c: DeviceCode
-      try {
-        c = await invoke<DeviceCode>("login_start")
-      } catch (e) {
-        if (alive) setError(String(e))
-        return
-      }
-      if (!alive) return
-      setCode(c)
-      openUrl(c.verification_uri).catch(() => {})
-      try {
-        await invoke("login_finish", { code: c })
-        if (!alive) return
-        onOpenChange(false)
-        await onDone()
-      } catch (e) {
-        if (alive) setError(String(e))
-      }
-    })()
-    return () => {
-      alive = false
-    }
-  }, [open, configured, onOpenChange, onDone])
-
-  const copy = () => {
-    if (!code) return
-    navigator.clipboard.writeText(code.user_code)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
+  const { code, error, copied, copy } = useDeviceLogin({
+    active: open,
+    configured,
+    onDone: async () => {
+      onOpenChange(false)
+      await onDone()
+    },
+  })
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
