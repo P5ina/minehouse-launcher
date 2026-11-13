@@ -3,7 +3,7 @@ import { Loader2, Package, Palette, Play, ScrollText, Settings } from "lucide-re
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import type { Info } from "@/lib/api"
+import { activeInstance, type Info } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 import { AccountMenu } from "./account-menu"
@@ -68,6 +68,7 @@ export function BottomBar({
   onChanged: () => Promise<void>
 }) {
   const acc = info?.account
+  const horizon = activeInstance(info)?.kind === "horizon"
   return (
     <footer className="relative z-10 flex shrink-0 items-center gap-5 border-t bg-background/80 px-5 py-3.5 backdrop-blur">
       <AccountMenu info={info} disabled={playing} onLogin={onLogin} onChanged={onChanged} />
@@ -78,14 +79,19 @@ export function BottomBar({
       </div>
 
       <div className="flex items-center gap-2">
-        <Button variant="outline" size="lg" onClick={onMods}>
-          <Package />
-          Моды
-        </Button>
-        <Button variant="outline" size="lg" onClick={onPacks}>
-          <Palette />
-          Паки
-        </Button>
+        {/* В Horizon моды Fabric, ресурспаки и шейдеры лаунчера не работают. */}
+        {!horizon && (
+          <>
+            <Button variant="outline" size="lg" onClick={onMods}>
+              <Package />
+              Моды
+            </Button>
+            <Button variant="outline" size="lg" onClick={onPacks}>
+              <Palette />
+              Паки
+            </Button>
+          </>
+        )}
         <IconButton label="Журнал" active={logOpen} onClick={onLog}>
           <ScrollText />
         </IconButton>

@@ -129,6 +129,9 @@ pub struct AssetIndexRef {
 #[derive(Clone, Debug, Deserialize)]
 pub struct Downloads {
     pub client: Artifact,
+    /// Horizon prepares its resources from the server jar too.
+    #[serde(default)]
+    pub server: Option<Artifact>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -261,6 +264,24 @@ pub fn client_jar(paths: &Paths, v: &VersionJson) -> Result<Download> {
     Ok(Download {
         url: art.url.clone(),
         path: paths.version_dir(&v.id).join(format!("{}.jar", v.id)),
+        hash: art.sha1.clone().map(Hash::Sha1).unwrap_or(Hash::None),
+        size: art.size,
+        executable: false,
+    })
+}
+
+/// The dedicated server jar, which only Horizon's preparer reads.
+pub fn server_jar(paths: &Paths, v: &VersionJson) -> Result<Download> {
+    let art = v
+        .downloads
+        .as_ref()
+        .and_then(|d| d.server.as_ref())
+        .context("version has no server download")?;
+    Ok(Download {
+        url: art.url.clone(),
+        path: paths
+            .version_dir(&v.id)
+            .join(format!("{}-server.jar", v.id)),
         hash: art.sha1.clone().map(Hash::Sha1).unwrap_or(Hash::None),
         size: art.size,
         executable: false,

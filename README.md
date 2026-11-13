@@ -68,6 +68,36 @@ Minecraft, Fabric и сборки MineHouse, запуск сразу на `play.
 единственная сборка остаётся в `game/`, пока папку не перенесут. Во Flatpak
 папка не меняется. `mh-cli instances list|new|use|rm|dir` делает то же без окна.
 
+### Horizon (лёгкая)
+
+Тип сборки «Horizon (лёгкая)» (`horizon.rs`) запускает
+[Horizon](https://github.com/horizon-rust/horizon), Minecraft 26.3 на Rust, с
+нативными модами MineHouse (голосовой чат Plasmo Voice, Ping Wheel) из
+[P5ina/minehouse-horizon](https://github.com/P5ina/minehouse-horizon). Шаги как в
+`docs/api/launch-guide.md` Horizon:
+
+1. `minehouse-horizon-<платформа>.zip` из последнего релиза minehouse-horizon
+   (проверка по `SHA256SUMS`): наш `horizon-client` и `minehouse-horizon.json` с
+   коммитом и Nightly Horizon, из которых он собран.
+2. Эта Nightly Horizon для платформы, `SHA256SUMS` проверяется по подписи Ed25519
+   (ключ из `release-keys.txt` Horizon). Если датированного релиза нет, берётся
+   `nightly`, но только пока тег стоит на том же коммите. Распаковывается в
+   `<данные>/horizon/builds/<nightly>-<коммит>/`, её `horizon-client` заменяется
+   нашим. Хранятся текущая и одна предыдущая.
+3. `horizon-prepare --check`; если ресурсов нет: ванильные файлы 26.3 (клиент,
+   серверный jar, библиотеки, ассеты), Java 25, затем `horizon-prepare --prepare
+   --complete --progress json` в `<данные>/horizon/resources/<коммит>/`. Первый раз
+   несколько минут (на CI-машине ~700 МБ), дальше только проверка.
+4. `horizon-client --resources … --game-dir <сборка> --home <сборка>
+   --session-stdin --quickPlayMultiplayer play.minehouse.pro:25524`, сессия JSON
+   в stdin. Коды выхода 1/2/101 показываются ошибкой с путём к отчёту.
+
+Сборки есть для Windows x64, Linux x86_64 и macOS на Apple silicon (что собирает
+CI minehouse-horizon). Кнопки «Моды» и «Паки» для Horizon скрыты.
+`MINEHOUSE_HORIZON_ZIP=<zip>` берёт локальный zip (артефакт CI) вместо релиза,
+`MINEHOUSE_HORIZON_URL` меняет адрес релизов, `mh-cli horizon` ставит и печатает
+команду запуска.
+
 При первом запуске показывается знакомство: папка, сборка, вход через Microsoft,
 Discord (вступить, войти на сайт, заявка). Повторить можно из настроек.
 Refresh-токен Microsoft хранится в системном хранилище паролей.

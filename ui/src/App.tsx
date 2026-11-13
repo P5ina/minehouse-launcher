@@ -14,7 +14,7 @@ import { TopBar } from "@/components/launcher/top-bar"
 import { UpdateBanner } from "@/components/launcher/update-banner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { useLauncher } from "@/hooks/use-launcher"
-import type { PackKind } from "@/lib/api"
+import { activeInstance, type PackKind } from "@/lib/api"
 
 export function App() {
   const l = useLauncher()
@@ -107,6 +107,7 @@ export function App() {
       />
       <DropOverlay
         onDrop={(jars, zips) => {
+          if (activeInstance(l.info)?.kind === "horizon") return
           if (jars.length) setMods({ open: true, tab: "mine", dropped: jars })
           else if (zips.length) setPacks((p) => ({ ...p, open: true, dropped: zips }))
         }}

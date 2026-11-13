@@ -12,7 +12,7 @@ use minehouse_core::paths::Paths;
 use minehouse_core::progress::{Event, Reporter};
 use minehouse_core::settings::Settings;
 use minehouse_core::user_mods::{self, Pack};
-use minehouse_core::{http, install, instances, launch, modpack, modrinth, ping};
+use minehouse_core::{horizon, http, install, instances, launch, modpack, modrinth, ping};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
@@ -125,6 +125,8 @@ struct Info {
     can_move_data: bool,
     /// False inside Flatpak: `flatpak update` ships the updates there.
     self_update: bool,
+    /// Horizon instances can be played on this computer.
+    horizon_supported: bool,
 }
 
 /// Flatpak sets `FLATPAK_ID` and mounts `/.flatpak-info` in every sandbox.
@@ -168,6 +170,7 @@ async fn info(app: State<'_, Arc<App>>) -> Res<Info> {
         can_move_data: !in_flatpak(),
         instances: config.instances,
         self_update: !in_flatpak(),
+        horizon_supported: horizon::supported(),
     })
 }
 
@@ -743,8 +746,19 @@ fn lock_all(app: &Arc<App>) -> Res<MoveLock> {
 }
 
 #[tauri::command]
-async fn instance_create(app: State<'_, Arc<App>>, name: String) -> Res<instances::Instance> {
-    app.config().create(&name).map_err(err)
+async fn instance_create(
+    app: State<'_, Arc<App>>,
+    name: String,
+    kind: Option<String>,
+) -> Res<instances::Instance> {
+    let kind = match kind {
+        Some(k) => instances::Kind::parse(&k).map_err(err)?,
+        None => instances::Kind::Fabric,
+    };
+    if kind == instances::Kind::Horizon && !horizon::supported() {
+        return Err("Horizon пока не собирается для этой системы".into());
+    }
+    app.config().create(&name, kind).map_err(err)
 }
 
 /// Copies mods, packs, options and worlds; can take a while with big worlds.
@@ -957,9 +971,21 @@ async fn play(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
         }
     };
 
-    let installed = {
+    enum Ready {
+        Fabric(Box<install::Installed>),
+        Horizon(horizon::Installed),
+    }
+    let kind = config.active().kind;
+    let ready = {
         let _shared = app.shared.lock().await;
-        install::install(&paths, &reporter).await.map_err(err)?
+        match kind {
+            instances::Kind::Fabric => Ready::Fabric(Box::new(
+                install::install(&paths, &reporter).await.map_err(err)?,
+            )),
+            instances::Kind::Horizon => {
+                Ready::Horizon(horizon::install(&paths, &reporter).await.map_err(err)?)
+            }
+        }
     };
 
     reporter.stage("Игра запущена");
@@ -969,7 +995,25 @@ async fn play(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
             let _ = w.hide();
         }
     }
-    let status = launch::launch(&paths, &installed, &session, &settings, &reporter).await;
+    let result = match &ready {
+        Ready::Fabric(installed) => {
+            launch::launch(&paths, installed, &session, &settings, &reporter)
+                .await
+                .map_err(err)
+                .and_then(|status| {
+                    if status.success() {
+                        Ok(())
+                    } else {
+                        Err(format!(
+                            "Игра закрылась с ошибкой ({status}). Подробности в журнале."
+                        ))
+                    }
+                })
+        }
+        Ready::Horizon(installed) => horizon::launch(&paths, installed, &session, &reporter)
+            .await
+            .map_err(err),
+    };
     drop(lock);
     // Back when the last game closes.
     if running_count(&app) == 0 {
@@ -978,13 +1022,7 @@ async fn play(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
         }
     }
     game_state("stopped");
-    let status = status.map_err(err)?;
-    if !status.success() {
-        return Err(format!(
-            "Игра закрылась с ошибкой ({status}). Подробности в журнале."
-        ));
-    }
-    Ok(())
+    result
 }
 
 /// Instances being installed or played right now.

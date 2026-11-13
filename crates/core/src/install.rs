@@ -24,6 +24,41 @@ pub struct Installed {
     pub server: String,
 }
 
+/// A Java for `version`: the player's own when the setting allows and one
+/// fits, otherwise Mojang's runtime.
+pub async fn java_for(
+    client: &reqwest::Client,
+    paths: &Paths,
+    version: &minecraft::JavaVersion,
+    reporter: &Reporter,
+) -> Result<PathBuf> {
+    let system = if crate::settings::Settings::load(paths).system_java {
+        reporter.stage("Ищем Java на компьютере");
+        let major = version.major_version;
+        tokio::task::spawn_blocking(move || java::find_system(major))
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    let java = match system {
+        Some(found) => {
+            reporter.log(format!(
+                "Java {} уже установлена: {}",
+                found.version,
+                found.java.display()
+            ));
+            found.java
+        }
+        None => {
+            reporter.stage("Скачиваем Java");
+            java::install(client, paths, &version.component, reporter).await?
+        }
+    };
+    Ok(java)
+}
+
 pub async fn install(paths: &Paths, reporter: &Reporter) -> Result<Installed> {
     let client = http::client();
     let env = Env::current();
@@ -57,30 +92,7 @@ pub async fn install(paths: &Paths, reporter: &Reporter) -> Result<Installed> {
     let client_jar = minecraft::client_jar(paths, &vanilla)?;
     let version = fabric::merge(vanilla, profile);
 
-    let system = if crate::settings::Settings::load(paths).system_java {
-        reporter.stage("Ищем Java на компьютере");
-        let major = java_version.major_version;
-        tokio::task::spawn_blocking(move || java::find_system(major))
-            .await
-            .ok()
-            .flatten()
-    } else {
-        None
-    };
-    let java = match system {
-        Some(found) => {
-            reporter.log(format!(
-                "Java {} уже установлена: {}",
-                found.version,
-                found.java.display()
-            ));
-            found.java
-        }
-        None => {
-            reporter.stage("Скачиваем Java");
-            java::install(&client, paths, &java_version.component, reporter).await?
-        }
-    };
+    let java = java_for(&client, paths, &java_version, reporter).await?;
 
     reporter.stage("Скачиваем Minecraft");
     let mut downloads = vec![client_jar.clone()];

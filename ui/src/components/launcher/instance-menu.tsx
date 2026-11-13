@@ -33,14 +33,28 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { activeInstance, invoke, type Info } from "@/lib/api"
+import { activeInstance, invoke, type Info, type InstanceKind } from "@/lib/api"
+import { cn } from "@/lib/utils"
 
 type NameMode = "create" | "duplicate" | "rename"
+
+const KINDS: { kind: InstanceKind; title: string; text: string }[] = [
+  {
+    kind: "fabric",
+    title: "MineHouse",
+    text: "Обычный Minecraft с модами MineHouse. Свои моды Fabric, ресурспаки и шейдеры.",
+  },
+  {
+    kind: "horizon",
+    title: "Horizon (лёгкая)",
+    text: "Minecraft, переписанный на Rust: быстрее на слабых компьютерах. Голосовой чат и метки есть, моды Fabric и шейдеры не ставятся.",
+  },
+]
 
 const TITLES: Record<NameMode, { title: string; text: string; button: string }> = {
   create: {
     title: "Новая сборка",
-    text: "Своя папка игры: моды, ресурспаки, шейдеры, настройки и миры отдельно от других сборок. Моды MineHouse поставятся при первом запуске.",
+    text: "Своя папка игры: настройки и миры отдельно от других сборок. Всё нужное скачается при первом запуске.",
     button: "Создать",
   },
   duplicate: {
@@ -65,6 +79,7 @@ export function InstanceMenu({
 }) {
   const [mode, setMode] = useState<NameMode | null>(null)
   const [name, setName] = useState("")
+  const [kind, setKind] = useState<InstanceKind>("fabric")
   const [error, setError] = useState("")
   const [working, setWorking] = useState(false)
   const [removing, setRemoving] = useState(false)
@@ -73,6 +88,7 @@ export function InstanceMenu({
 
   const open = (m: NameMode) => {
     setMode(m)
+    setKind("fabric")
     setError("")
     setName(m === "rename" ? active.name : m === "duplicate" ? `${active.name} (копия)` : "")
   }
@@ -95,7 +111,7 @@ export function InstanceMenu({
   const submit = () =>
     run(() =>
       mode === "create"
-        ? invoke("instance_create", { name })
+        ? invoke("instance_create", { name, kind })
         : mode === "duplicate"
           ? invoke("instance_duplicate", { id: active.id, name })
           : invoke("instance_rename", { id: active.id, name })
@@ -135,6 +151,11 @@ export function InstanceMenu({
               {info.instances.map((i) => (
                 <DropdownMenuRadioItem key={i.id} value={i.id}>
                   <span className="truncate">{i.name}</span>
+                  {i.kind === "horizon" && (
+                    <span className="rounded bg-secondary px-1.5 text-[10px] leading-4 text-muted-foreground">
+                      Horizon
+                    </span>
+                  )}
                   {running.includes(i.id) && (
                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
                       <span className="size-1.5 rounded-full bg-emerald-500" />
@@ -192,6 +213,32 @@ export function InstanceMenu({
                 }}
                 className="grid gap-3"
               >
+                {mode === "create" && (
+                  <div className="grid gap-2" role="radiogroup" aria-label="Тип сборки">
+                    {KINDS.map((k) => {
+                      const off = k.kind === "horizon" && !info.horizon_supported
+                      return (
+                        <button
+                          key={k.kind}
+                          type="button"
+                          role="radio"
+                          aria-checked={kind === k.kind}
+                          disabled={off}
+                          onClick={() => setKind(k.kind)}
+                          className={cn(
+                            "grid gap-0.5 rounded-md border px-3 py-2 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
+                            kind === k.kind ? "border-primary bg-muted/60" : "hover:bg-muted/40"
+                          )}
+                        >
+                          <span className="text-sm font-medium">{k.title}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {off ? "Пока только для Windows x64, Linux и Mac на Apple silicon." : k.text}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
                 <Input
                   autoFocus
                   placeholder="Название, например «С шейдерами»"

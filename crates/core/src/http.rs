@@ -7,7 +7,7 @@ use anyhow::{bail, Context, Result};
 use futures::{StreamExt, TryStreamExt};
 use serde::de::DeserializeOwned;
 use sha1::Sha1;
-use sha2::{Digest, Sha512};
+use sha2::{Digest, Sha256, Sha512};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::progress::Reporter;
@@ -75,6 +75,7 @@ pub async fn get_json_cached<T: DeserializeOwned>(
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Hash {
     Sha1(String),
+    Sha256(String),
     Sha512(String),
     None,
 }
@@ -90,6 +91,7 @@ pub struct Download {
 
 enum Hasher {
     Sha1(Sha1),
+    Sha256(Sha256),
     Sha512(Sha512),
     None,
 }
@@ -98,6 +100,7 @@ impl Hasher {
     fn new(hash: &Hash) -> Self {
         match hash {
             Hash::Sha1(_) => Self::Sha1(Sha1::new()),
+            Hash::Sha256(_) => Self::Sha256(Sha256::new()),
             Hash::Sha512(_) => Self::Sha512(Sha512::new()),
             Hash::None => Self::None,
         }
@@ -105,6 +108,7 @@ impl Hasher {
     fn update(&mut self, data: &[u8]) {
         match self {
             Self::Sha1(h) => h.update(data),
+            Self::Sha256(h) => h.update(data),
             Self::Sha512(h) => h.update(data),
             Self::None => {}
         }
@@ -112,6 +116,9 @@ impl Hasher {
     fn matches(self, hash: &Hash) -> bool {
         match (self, hash) {
             (Self::Sha1(h), Hash::Sha1(want)) => {
+                hex::encode(h.finalize()).eq_ignore_ascii_case(want)
+            }
+            (Self::Sha256(h), Hash::Sha256(want)) => {
                 hex::encode(h.finalize()).eq_ignore_ascii_case(want)
             }
             (Self::Sha512(h), Hash::Sha512(want)) => {
