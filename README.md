@@ -23,7 +23,8 @@ Minecraft, Fabric и сборки MineHouse, запуск сразу на `play.
 `minecraft`, `loader_version`), поэтому для обновления игры достаточно
 поменять `modpack/pack.json` в `minehouse-landing`. Каждый запуск сверяет
 файлы и докачивает только изменённые. Состояние сборки пишется в
-`config/minehouse-pack.json`, как у автообновления мода MineHouse Menu,
+`config/minehouse-pack.json`, как у автообновления клиентского мода MineHouse
+(`minehouse-client.jar`; до сборки 1.14.0 это был мод MineHouse Menu и ещё три jar),
 поэтому они не мешают друг другу.
 
 ## Свои моды

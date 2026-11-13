@@ -1,6 +1,8 @@
 //! The MineHouse modpack from the site's `manifest.json`. Same files and the
 //! same `config/minehouse-pack.json` state as the in-game updater of the
-//! MineHouse Menu mod, so the two never fight. Mods the player added
+//! MineHouse client mod (minehouse-client.jar, MineHouse Menu before pack
+//! 1.14.0), so the two never fight. Files the pack dropped (the four old jars
+//! of our mods in 1.14.0) are removed by the same sync. Mods the player added
 //! themselves are never touched (see [`crate::user_mods`]).
 //!
 //! Optional mods: the manifest's `options` may be turned off by the player,
