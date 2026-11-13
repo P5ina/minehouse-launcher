@@ -8,6 +8,7 @@
 pub mod auth;
 pub mod fabric;
 pub mod gamelog;
+pub mod horizon;
 pub mod http;
 pub mod install;
 pub mod instances;

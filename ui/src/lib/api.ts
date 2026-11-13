@@ -34,10 +34,15 @@ export type Info = {
   setup_done: boolean
   /** false во Flatpak: там папку игры не перенести */
   can_move_data: boolean
+  /** Horizon собирается для этой системы */
+  horizon_supported: boolean
 }
 
 /** Сборка: своя папка игры с модами, паками, настройками и мирами. */
-export type Instance = { id: string; name: string; dir: string; created_at: number }
+export type Instance = { id: string; name: string; dir: string; kind: InstanceKind; created_at: number }
+
+/** fabric — Minecraft с Fabric и сборкой MineHouse; horizon — Horizon (Minecraft на Rust). */
+export type InstanceKind = "fabric" | "horizon"
 
 export function activeInstance(info: Info | null) {
   return info?.instances.find((i) => i.id === info.active_instance) ?? info?.instances[0] ?? null

@@ -22,10 +22,34 @@ const SHARED: &[&str] = &["runtime", "versions", "libraries", "assets", "natives
 /// Launcher indexes that lived in `root` before instances had their own.
 const LEGACY_INDEXES: &[&str] = &["user-mods.json", "content-packs.json"];
 
+/// What an instance runs.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    /// Java Minecraft with Fabric and the MineHouse modpack.
+    #[default]
+    Fabric,
+    /// Horizon, Minecraft rewritten in Rust, with MineHouse's native mods
+    /// (see [`crate::horizon`]): lighter, but no Fabric mods or shaders.
+    Horizon,
+}
+
+impl Kind {
+    pub fn parse(s: &str) -> Result<Self> {
+        match s {
+            "fabric" => Ok(Self::Fabric),
+            "horizon" => Ok(Self::Horizon),
+            _ => anyhow::bail!("Неизвестный тип сборки {s}"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Instance {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub kind: Kind,
     /// Its `.minecraft`.
     pub dir: PathBuf,
     /// Unix seconds.
@@ -90,6 +114,7 @@ impl Config {
                 id: DEFAULT_ID.into(),
                 name: DEFAULT_NAME.into(),
                 dir: root.join("game"),
+                kind: Kind::Fabric,
                 created_at: now(),
             });
         }
@@ -202,7 +227,7 @@ impl Config {
     }
 
     /// Adds an empty instance and selects it; the next «Играть» installs it.
-    pub fn create(&mut self, name: &str) -> Result<Instance> {
+    pub fn create(&mut self, name: &str, kind: Kind) -> Result<Instance> {
         let name = self.check_name(name, None)?;
         let id = self.free_id(&name);
         let dir = self.instances_dir().join(&id);
@@ -212,6 +237,7 @@ impl Config {
             id: id.clone(),
             name,
             dir,
+            kind,
             created_at: now(),
         };
         self.instances.push(inst.clone());
@@ -222,7 +248,8 @@ impl Config {
 
     /// A copy of an instance with its mods, packs, options and worlds; selected.
     pub fn duplicate(&mut self, from: &str, name: &str) -> Result<Instance> {
-        let src = self.get(from).context("Нет такой сборки")?.dir.clone();
+        let from = self.get(from).context("Нет такой сборки")?;
+        let (src, kind) = (from.dir.clone(), from.kind);
         let name = self.check_name(name, None)?;
         let id = self.free_id(&name);
         let dir = self.instances_dir().join(&id);
@@ -238,6 +265,7 @@ impl Config {
             id: id.clone(),
             name,
             dir,
+            kind,
             created_at: now(),
         };
         self.instances.push(inst.clone());
@@ -512,22 +540,28 @@ mod tests {
     fn create_rename_remove() {
         let dir = tempfile::tempdir().unwrap();
         let mut c = Config::load(dir.path());
-        let a = c.create("Шейдеры").unwrap();
+        let a = c.create("Шейдеры", Kind::Fabric).unwrap();
         assert_eq!(a.id, "sheydery");
         assert_eq!(c.active, "sheydery");
         assert!(a.dir.is_dir());
-        assert!(c.create("шейдеры").is_err());
+        assert!(c.create("шейдеры", Kind::Fabric).is_err());
         let b = c.duplicate("sheydery", "Шейдеры 2").unwrap();
         assert_eq!(b.id, "sheydery-2");
         c.rename("sheydery-2", "Лёгкая").unwrap();
+        let h = c.create("Horizon", Kind::Horizon).unwrap();
+        assert_eq!(h.kind, Kind::Horizon);
 
         let c2 = Config::load(dir.path());
-        assert_eq!(c2.instances.len(), 3);
+        assert_eq!(c2.instances.len(), 4);
+        assert_eq!(c2.get("horizon").unwrap().kind, Kind::Horizon);
+        // The instance every launcher had is Fabric.
+        assert_eq!(c2.get(DEFAULT_ID).unwrap().kind, Kind::Fabric);
         assert_eq!(c2.get("sheydery-2").unwrap().name, "Лёгкая");
 
         c.remove("sheydery").unwrap();
         assert!(!a.dir.exists());
         c.remove("sheydery-2").unwrap();
+        c.remove("horizon").unwrap();
         assert!(c.remove(DEFAULT_ID).is_err());
     }
 
@@ -540,7 +574,7 @@ mod tests {
         std::fs::create_dir_all(root.join("libraries/a")).unwrap();
         std::fs::write(root.join("libraries/a/b.jar"), "jar").unwrap();
         let mut c = Config::load(&root);
-        c.create("Вторая").unwrap();
+        c.create("Вторая", Kind::Fabric).unwrap();
         std::fs::write(c.get("vtoraya").unwrap().dir.join("options.txt"), "o").unwrap();
 
         // A folder with other things in it gets a MineHouse subfolder.

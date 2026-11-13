@@ -1,5 +1,6 @@
 //! Headless driver for CI and debugging:
 //!   mh-cli install         download/repair everything, print the java command
+//!   mh-cli horizon         download/prepare Horizon, print its command line
 //!   mh-cli ping            server status
 //!   mh-cli login           Microsoft sign-in in the terminal, then play
 //!   mh-cli mods [list | search <q> | add <project> | jar <path> | rm <file> | update | sync]
@@ -47,6 +48,11 @@ async fn main() -> Result<()> {
                 inst.pack_version
             );
         }
+        Some("horizon") => {
+            let inst = minehouse_core::horizon::install(&paths, &reporter).await?;
+            let args = minehouse_core::horizon::build_args(&inst, &paths.game_dir(), None);
+            println!("{} {}", inst.client.display(), args.join(" "));
+        }
         Some("ping") => println!(
             "{:?}",
             ping::ping(minehouse_core::SERVER_HOST, minehouse_core::SERVER_PORT).await?
@@ -81,7 +87,7 @@ async fn main() -> Result<()> {
             }
         }
         _ => {
-            eprintln!("usage: mh-cli install | ping | login | mods ... | packs ... | instances ...")
+            eprintln!("usage: mh-cli install | horizon | ping | login | mods ... | packs ... | instances ...")
         }
     }
     Ok(())
@@ -93,7 +99,10 @@ fn instances_cmd() -> Result<()> {
     let arg = || args.get(1).cloned().unwrap_or_default();
     match args.first().map(String::as_str).unwrap_or("list") {
         "list" => {}
-        "new" => drop(c.create(&args[1..].join(" "))?),
+        "new" => drop(c.create(
+            &args[1..].join(" "),
+            minehouse_core::instances::Kind::Fabric,
+        )?),
         "use" => c.select(&arg())?,
         "rm" => c.remove(&arg())?,
         "dir" => drop(c.set_data_dir(std::path::Path::new(&arg()), &|s| eprintln!("== {s}"))?),
