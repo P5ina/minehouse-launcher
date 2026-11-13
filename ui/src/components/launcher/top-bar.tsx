@@ -8,12 +8,12 @@ import { InstanceMenu } from "./instance-menu"
 // Шапка как на сайте: логотип и выбор сборки слева, ссылки справа.
 export function TopBar({
   info,
-  playing,
+  running,
   onLog,
   onChanged,
 }: {
   info: Info | null
-  playing: boolean
+  running: string[]
   onLog: (line: string) => void
   onChanged: () => Promise<void>
 }) {
@@ -24,7 +24,7 @@ export function TopBar({
       <img src="/logo.png" alt="" className="size-6" draggable={false} />
       <span className="text-sm font-semibold tracking-tight">MineHouse</span>
       <span aria-hidden className="ml-1 text-muted-foreground/50">/</span>
-      <InstanceMenu info={info} disabled={playing} onChanged={onChanged} />
+      <InstanceMenu info={info} running={running} onChanged={onChanged} />
       <nav className="ml-auto flex items-center gap-1">
         <Button variant="ghost" size="sm" onClick={() => open(LINKS.site)}>
           <Globe />

@@ -21,9 +21,61 @@ struct App {
     /// Launcher config folder; game files go wherever [`instances::Config`] says.
     root: PathBuf,
     client: http::ReqwestClient,
-    busy: Mutex<()>,
+    /// Instances being installed or played, and whether the game folder is moving.
+    runs: std::sync::Mutex<Runs>,
+    /// Java, Minecraft, libraries and assets are shared: one install at a time.
+    shared: Mutex<()>,
     /// The last manifest fetch, for the mod browser.
     manifest: Mutex<Option<modpack::Manifest>>,
+}
+
+#[derive(Default)]
+struct Runs {
+    /// Instance id → nickname it plays as (`None` while only its files are changed).
+    running: std::collections::HashMap<String, Option<String>>,
+    moving: bool,
+}
+
+/// Holds one instance until dropped: nobody else installs, plays or edits it.
+struct InstanceLock {
+    app: Arc<App>,
+    id: String,
+}
+
+impl Drop for InstanceLock {
+    fn drop(&mut self) {
+        self.app.runs.lock().unwrap().running.remove(&self.id);
+    }
+}
+
+impl InstanceLock {
+    fn set_nick(&self, nick: &str) {
+        if let Some(n) = self.app.runs.lock().unwrap().running.get_mut(&self.id) {
+            *n = Some(nick.to_string());
+        }
+    }
+}
+
+/// Locks `id`, or explains why not with `busy` (what the player tried to do).
+fn lock_instance(app: &Arc<App>, id: &str, busy: &str) -> Res<InstanceLock> {
+    let mut runs = app.runs.lock().unwrap();
+    if runs.moving {
+        return Err("Подождите, папка игры переносится".into());
+    }
+    if runs.running.contains_key(id) {
+        return Err(busy.to_string());
+    }
+    runs.running.insert(id.to_string(), None);
+    Ok(InstanceLock {
+        app: app.clone(),
+        id: id.to_string(),
+    })
+}
+
+/// The selected instance, locked while its mods or packs change.
+fn lock_active(app: &Arc<App>, busy: &str) -> Res<InstanceLock> {
+    let id = app.config().active().id.clone();
+    lock_instance(app, &id, busy)
 }
 
 impl App {
@@ -244,10 +296,8 @@ async fn open_game_dir(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
 
 /// Changing `mods/` while the game runs (or installs) would break it, and
 /// Windows keeps the jars locked anyway.
-fn not_busy(app: &App) -> Res<tokio::sync::MutexGuard<'_, ()>> {
-    app.busy
-        .try_lock()
-        .map_err(|_| "Закройте игру, чтобы менять моды".to_string())
+fn not_busy(app: &Arc<App>) -> Res<InstanceLock> {
+    lock_active(app, "Закройте игру этой сборки, чтобы менять моды")
 }
 
 #[tauri::command]
@@ -312,7 +362,7 @@ async fn mods_install(
     project: String,
     icon: Option<String>,
 ) -> Res<Vec<String>> {
-    let _guard = not_busy(&app)?;
+    let _guard = not_busy(app.inner())?;
     let pack = app.pack(false).await?;
     user_mods::install_modrinth(&app.client, &app.paths(), &pack, &project, icon)
         .await
@@ -323,7 +373,7 @@ async fn mods_install(
 /// Returns one line per file: what was added, or why not.
 #[tauri::command]
 async fn mods_add_files(app: State<'_, Arc<App>>, files: Vec<String>) -> Res<Vec<String>> {
-    let _guard = not_busy(&app)?;
+    let _guard = not_busy(app.inner())?;
     let pack = app.pack(false).await?;
     let mut out = Vec::new();
     for f in files {
@@ -363,7 +413,7 @@ async fn mods_pick_files(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<Vec
 
 #[tauri::command]
 async fn mods_toggle(app: State<'_, Arc<App>>, file: String, enabled: bool) -> Res<()> {
-    let _guard = not_busy(&app)?;
+    let _guard = not_busy(app.inner())?;
     let pack = app.pack(false).await?;
     user_mods::set_enabled(&app.paths(), &pack, &file, enabled).map_err(err)
 }
@@ -371,7 +421,7 @@ async fn mods_toggle(app: State<'_, Arc<App>>, file: String, enabled: bool) -> R
 /// Turns an optional mod of the pack on or off (downloads or removes it now).
 #[tauri::command]
 async fn mods_pack_option(app: State<'_, Arc<App>>, id: String, enabled: bool) -> Res<()> {
-    let _guard = not_busy(&app)?;
+    let _guard = not_busy(app.inner())?;
     let manifest = app.manifest(false).await?;
     user_mods::set_pack_option(
         &app.client,
@@ -387,14 +437,14 @@ async fn mods_pack_option(app: State<'_, Arc<App>>, id: String, enabled: bool) -
 
 #[tauri::command]
 async fn mods_remove(app: State<'_, Arc<App>>, file: String) -> Res<()> {
-    let _guard = not_busy(&app)?;
+    let _guard = not_busy(app.inner())?;
     let pack = app.pack(false).await?;
     user_mods::remove(&app.paths(), &pack, &file).map_err(err)
 }
 
 #[tauri::command]
 async fn mods_update(app: State<'_, Arc<App>>) -> Res<Vec<String>> {
-    let _guard = not_busy(&app)?;
+    let _guard = not_busy(app.inner())?;
     let pack = app.pack(true).await?;
     user_mods::update_all(&app.client, &app.paths(), &pack)
         .await
@@ -513,10 +563,11 @@ async fn packs_search(
 }
 
 /// The game reads these files only at start; while it runs, its own screens own them.
-fn not_playing(app: &App) -> Res<tokio::sync::MutexGuard<'_, ()>> {
-    app.busy
-        .try_lock()
-        .map_err(|_| "Закройте игру: пока она запущена, паки меняются в её настройках".to_string())
+fn not_playing(app: &Arc<App>) -> Res<InstanceLock> {
+    lock_active(
+        app,
+        "Закройте игру этой сборки: пока она запущена, паки меняются в её настройках",
+    )
 }
 
 #[tauri::command]
@@ -527,7 +578,7 @@ async fn packs_install(
     icon: Option<String>,
 ) -> Res<String> {
     let kind = self::kind(&kind)?;
-    let _guard = not_playing(&app)?;
+    let _guard = not_playing(app.inner())?;
     let pack = app.pack(false).await?;
     packs::install_modrinth(
         &app.client,
@@ -550,7 +601,7 @@ struct Added {
 
 #[tauri::command]
 async fn packs_add_files(app: State<'_, Arc<App>>, files: Vec<String>) -> Res<Added> {
-    let _guard = not_playing(&app)?;
+    let _guard = not_playing(app.inner())?;
     let mut out = Added {
         lines: Vec::new(),
         kind: None,
@@ -608,27 +659,27 @@ async fn packs_toggle(
     enabled: bool,
 ) -> Res<()> {
     let kind = self::kind(&kind)?;
-    let _guard = not_playing(&app)?;
+    let _guard = not_playing(app.inner())?;
     packs::set_enabled(&app.paths(), kind, &file, enabled).map_err(err)
 }
 
 #[tauri::command]
 async fn packs_move(app: State<'_, Arc<App>>, file: String, up: bool) -> Res<()> {
-    let _guard = not_playing(&app)?;
+    let _guard = not_playing(app.inner())?;
     packs::move_resource_pack(&app.paths(), &file, up).map_err(err)
 }
 
 #[tauri::command]
 async fn packs_remove(app: State<'_, Arc<App>>, kind: String, file: String) -> Res<()> {
     let kind = self::kind(&kind)?;
-    let _guard = not_playing(&app)?;
+    let _guard = not_playing(app.inner())?;
     packs::remove(&app.paths(), kind, &file).map_err(err)
 }
 
 #[tauri::command]
 async fn packs_update(app: State<'_, Arc<App>>, kind: String) -> Res<Vec<String>> {
     let kind = self::kind(&kind)?;
-    let _guard = not_playing(&app)?;
+    let _guard = not_playing(app.inner())?;
     let pack = app.pack(false).await?;
     packs::update_all(&app.client, &app.paths(), kind, &pack.minecraft)
         .await
@@ -638,7 +689,7 @@ async fn packs_update(app: State<'_, Arc<App>>, kind: String) -> Res<Vec<String>
 /// Turns on Iris and the optional mods it needs (Sodium), downloading them now.
 #[tauri::command]
 async fn packs_enable_iris(app: State<'_, Arc<App>>) -> Res<()> {
-    let _guard = not_busy(&app)?;
+    let _guard = not_busy(app.inner())?;
     let manifest = app.manifest(false).await?;
     let Some(iris) = manifest.options.iter().find(|o| o.id == "iris") else {
         return Err("В сборке нет Iris".into());
@@ -673,17 +724,26 @@ async fn open_packs_dir(app: State<'_, Arc<App>>, handle: AppHandle, kind: Strin
 
 // ---- Instances («сборки») and the game folder --------------------------------
 
-/// Switching or deleting an instance while the game runs from it would pull
-/// files from under it.
-fn not_running(app: &App) -> Res<tokio::sync::MutexGuard<'_, ()>> {
-    app.busy
-        .try_lock()
-        .map_err(|_| "Закройте игру, чтобы менять сборки".to_string())
+/// Moving the game folder while any game runs would pull files from under it.
+struct MoveLock(Arc<App>);
+
+impl Drop for MoveLock {
+    fn drop(&mut self) {
+        self.0.runs.lock().unwrap().moving = false;
+    }
+}
+
+fn lock_all(app: &Arc<App>) -> Res<MoveLock> {
+    let mut runs = app.runs.lock().unwrap();
+    if !runs.running.is_empty() || runs.moving {
+        return Err("Закройте все запущенные сборки, чтобы перенести папку".into());
+    }
+    runs.moving = true;
+    Ok(MoveLock(app.clone()))
 }
 
 #[tauri::command]
 async fn instance_create(app: State<'_, Arc<App>>, name: String) -> Res<instances::Instance> {
-    let _guard = not_running(&app)?;
     app.config().create(&name).map_err(err)
 }
 
@@ -694,7 +754,11 @@ async fn instance_duplicate(
     id: String,
     name: String,
 ) -> Res<instances::Instance> {
-    let _guard = not_running(&app)?;
+    let _guard = lock_instance(
+        app.inner(),
+        &id,
+        "Закройте игру этой сборки, чтобы сделать копию",
+    )?;
     let mut config = app.config();
     tokio::task::spawn_blocking(move || config.duplicate(&id, &name))
         .await
@@ -709,13 +773,16 @@ async fn instance_rename(app: State<'_, Arc<App>>, id: String, name: String) -> 
 
 #[tauri::command]
 async fn instance_select(app: State<'_, Arc<App>>, id: String) -> Res<()> {
-    let _guard = not_running(&app)?;
     app.config().select(&id).map_err(err)
 }
 
 #[tauri::command]
 async fn instance_remove(app: State<'_, Arc<App>>, id: String) -> Res<()> {
-    let _guard = not_running(&app)?;
+    let _guard = lock_instance(
+        app.inner(),
+        &id,
+        "Закройте игру этой сборки, чтобы её удалить",
+    )?;
     let mut config = app.config();
     tokio::task::spawn_blocking(move || config.remove(&id))
         .await
@@ -763,7 +830,7 @@ async fn data_dir_set(app: State<'_, Arc<App>>, handle: AppHandle, path: String)
     if in_flatpak() {
         return Err("Во Flatpak папку игры менять нельзя".into());
     }
-    let _guard = not_running(&app)?;
+    let _guard = lock_all(app.inner())?;
     let mut config = app.config();
     let used = tokio::task::spawn_blocking(move || {
         let step = move |name: String| {
@@ -785,22 +852,90 @@ async fn setup_finish(app: State<'_, Arc<App>>, done: bool) -> Res<()> {
     config.save().map_err(err)
 }
 
-/// Sign-in refresh → install/update → launch. Progress goes out as `progress` events.
+/// A `progress` / `game` event of one instance: several can run at once.
+#[derive(Serialize, Clone)]
+struct Tagged<T: Serialize> {
+    instance: String,
+    #[serde(flatten)]
+    event: T,
+}
+
+#[derive(Serialize, Clone)]
+struct GameState {
+    state: &'static str,
+}
+
+fn running_count(app: &App) -> usize {
+    app.runs
+        .lock()
+        .unwrap()
+        .running
+        .values()
+        .filter(|n| n.is_some())
+        .count()
+}
+
+/// Sign-in refresh → install/update → launch of the selected instance. Other
+/// instances can be started meanwhile, each as its own nickname. Progress goes
+/// out as `progress` events tagged with the instance.
 #[tauri::command]
 async fn play(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
     let app = app.inner().clone();
-    let Ok(_guard) = app.busy.try_lock() else {
-        return Err("Уже запускается".into());
-    };
-    let emitter = handle.clone();
-    let reporter = Reporter::new(move |e: Event| {
-        let _ = emitter.emit("progress", e);
-    });
-
     // One instance for the whole run, even if the player selects another meanwhile.
     let config = app.config();
+    let id = config.active().id.clone();
+    let lock = lock_instance(&app, &id, "Эта сборка уже запущена")?;
     let paths = config.paths();
+    let emitter = handle.clone();
+    let tag = id.clone();
+    let reporter = Reporter::new(move |e: Event| {
+        let _ = emitter.emit(
+            "progress",
+            Tagged {
+                instance: tag.clone(),
+                event: e,
+            },
+        );
+    });
+    let game_state = |state: &'static str| {
+        let _ = handle.emit(
+            "game",
+            Tagged {
+                instance: id.clone(),
+                event: GameState { state },
+            },
+        );
+    };
     reporter.log(format!("Сборка «{}»", config.active().name));
+
+    let settings = Settings::load(&paths);
+    let alt = settings
+        .active_profile
+        .clone()
+        .filter(|a| settings.offline_profiles.contains(a));
+    // The server lets a nickname in once: a second window needs another one.
+    let nick_taken = |nick: &str| {
+        let runs = app.runs.lock().unwrap();
+        let other = runs
+            .running
+            .iter()
+            .find(|(other, n)| {
+                **other != id && n.as_deref().is_some_and(|n| n.eq_ignore_ascii_case(nick))
+            })
+            .map(|(other, _)| other.clone());
+        other.map(|o| {
+            let name = config.get(&o).map(|i| i.name.clone()).unwrap_or(o);
+            format!(
+                "Под ником {nick} уже запущена сборка «{name}». Для второго окна выберите другой ник или твинка"
+            )
+        })
+    };
+    if let Some(alt) = &alt {
+        if let Some(e) = nick_taken(alt) {
+            return Err(e);
+        }
+        lock.set_nick(alt);
+    }
 
     reporter.stage("Входим в аккаунт");
     let stored = account::load(&paths).ok_or("Сначала войдите через Microsoft")?;
@@ -808,31 +943,42 @@ async fn play(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
     // without a Minecraft profile. Alts are only launched after that.
     let account = auth::refresh(&app.client, &stored).await.map_err(err)?;
     account::save(&paths, &account).map_err(err)?;
-
-    let installed = install::install(&paths, &reporter).await.map_err(err)?;
-    let settings = Settings::load(&paths);
-    let session = match &settings.active_profile {
-        Some(alt) if settings.offline_profiles.contains(alt) => {
+    let session = match &alt {
+        Some(alt) => {
             reporter.log(format!("Играем за твинка {alt} (офлайн-профиль)"));
             auth::offline_session(alt)
         }
-        _ => account.session.clone(),
+        None => {
+            if let Some(e) = nick_taken(&account.session.name) {
+                return Err(e);
+            }
+            lock.set_nick(&account.session.name);
+            account.session.clone()
+        }
+    };
+
+    let installed = {
+        let _shared = app.shared.lock().await;
+        install::install(&paths, &reporter).await.map_err(err)?
     };
 
     reporter.stage("Игра запущена");
-    let _ = handle.emit("game", "started");
+    game_state("started");
     if settings.close_on_launch {
         if let Some(w) = handle.get_webview_window("main") {
             let _ = w.hide();
         }
     }
-    let status = launch::launch(&paths, &installed, &session, &settings, &reporter)
-        .await
-        .map_err(err)?;
-    if let Some(w) = handle.get_webview_window("main") {
-        let _ = w.show();
+    let status = launch::launch(&paths, &installed, &session, &settings, &reporter).await;
+    drop(lock);
+    // Back when the last game closes.
+    if running_count(&app) == 0 {
+        if let Some(w) = handle.get_webview_window("main") {
+            let _ = w.show();
+        }
     }
-    let _ = handle.emit("game", "stopped");
+    game_state("stopped");
+    let status = status.map_err(err)?;
     if !status.success() {
         return Err(format!(
             "Игра закрылась с ошибкой ({status}). Подробности в журнале."
@@ -841,12 +987,19 @@ async fn play(app: State<'_, Arc<App>>, handle: AppHandle) -> Res<()> {
     Ok(())
 }
 
+/// Instances being installed or played right now.
+#[tauri::command]
+async fn running(app: State<'_, Arc<App>>) -> Res<Vec<String>> {
+    Ok(app.runs.lock().unwrap().running.keys().cloned().collect())
+}
+
 fn main() {
     let root = Paths::default_root().expect("data directory");
     let app = Arc::new(App {
         root,
         client: http::client(),
-        busy: Mutex::new(()),
+        runs: std::sync::Mutex::new(Runs::default()),
+        shared: Mutex::new(()),
         manifest: Mutex::new(None),
     });
     let mut builder = tauri::Builder::default()
@@ -903,6 +1056,7 @@ fn main() {
             data_dir_pick,
             data_dir_set,
             setup_finish,
+            running,
             play
         ])
         .run(tauri::generate_context!())

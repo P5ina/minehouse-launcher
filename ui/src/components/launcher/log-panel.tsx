@@ -45,14 +45,32 @@ function asText(e: LogEntry) {
   return e.text
 }
 
-function Row({ e }: { e: LogEntry }) {
+// Метка сборки у строки, когда в журнале их несколько.
+function Tag({ name }: { name?: string }) {
+  if (!name) return null
+  return (
+    <span className="mr-2 inline-block max-w-28 truncate rounded bg-secondary px-1 align-bottom text-[10px] leading-4 text-secondary-foreground">
+      {name}
+    </span>
+  )
+}
+
+function Row({ e, tag }: { e: LogEntry; tag?: string }) {
   if (e.kind === "stage") {
-    return <div className="mt-2 font-medium text-foreground first:mt-0">▸ {e.text}</div>
+    return (
+      <div className="mt-2 font-medium text-foreground first:mt-0">
+        ▸ <Tag name={tag} />
+        {e.text}
+      </div>
+    )
   }
   if (e.kind === "text") {
     const err = rank(e) >= 4
     return (
-      <div className={cn("whitespace-pre-wrap", err ? "text-red-400" : "text-muted-foreground")}>{e.text}</div>
+      <div className={cn("whitespace-pre-wrap", err ? "text-red-400" : "text-muted-foreground")}>
+        <Tag name={tag} />
+        {e.text}
+      </div>
     )
   }
   const bad = (RANK[e.level] ?? 2) >= 4
@@ -60,6 +78,11 @@ function Row({ e }: { e: LogEntry }) {
   return (
     <div className="flex gap-2 py-px">
       <span className="shrink-0 text-zinc-500 tabular-nums">{time(e.time)}</span>
+      {tag && (
+        <span className="w-20 shrink-0">
+          <Tag name={tag} />
+        </span>
+      )}
       <span
         className={cn(
           "h-fit w-12 shrink-0 rounded px-1 text-center text-[10px] leading-4 font-semibold",
@@ -83,23 +106,29 @@ function Row({ e }: { e: LogEntry }) {
   )
 }
 
-// Журнал установки и игры.
-export function LogPanel({ lines }: { lines: LogEntry[] }) {
+// Журнал установки и игры. names: id сборки → название, для меток и фильтра.
+export function LogPanel({ lines, names }: { lines: LogEntry[]; names: Record<string, string> }) {
   const ref = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const [filter, setFilter] = useState<Filter>("all")
   const [query, setQuery] = useState("")
   const [copied, setCopied] = useState(false)
+  const [only, setOnly] = useState<string | null>(null)
+  // Сборки, которые есть в журнале: фильтр и метки нужны, только если их больше одной.
+  const seen = useMemo(() => [...new Set(lines.map((e) => e.instance).filter((i): i is string => !!i))], [lines])
+  const multi = seen.length > 1
+  const tagOf = (e: LogEntry) => (multi && !only && e.instance ? (names[e.instance] ?? e.instance) : undefined)
 
   const shown = useMemo(() => {
     const min = filter === "error" ? 4 : filter === "warn" ? 3 : 0
     const q = query.trim().toLowerCase()
     return lines.filter((e) => {
+      if (only && e.instance && e.instance !== only) return false
       if (e.kind === "stage") return min === 0 && !q
       if (rank(e) < min) return false
       return !q || asText(e).toLowerCase().includes(q)
     })
-  }, [lines, filter, query])
+  }, [lines, filter, query, only])
 
   // Прокручиваем вниз, только если пользователь не отмотал журнал вверх.
   useEffect(() => {
@@ -134,6 +163,21 @@ export function LogPanel({ lines }: { lines: LogEntry[] }) {
             </button>
           ))}
         </div>
+        {multi && (
+          <select
+            value={only ?? ""}
+            onChange={(ev) => setOnly(ev.target.value || null)}
+            className="h-7 max-w-40 rounded-lg border bg-card/80 px-2 text-xs backdrop-blur outline-none"
+            aria-label="Сборка"
+          >
+            <option value="">Все сборки</option>
+            {seen.map((id) => (
+              <option key={id} value={id}>
+                {names[id] ?? id}
+              </option>
+            ))}
+          </select>
+        )}
         <label className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-lg border bg-card/80 px-2 text-xs backdrop-blur">
           <Search className="size-3.5 shrink-0 text-muted-foreground" />
           <input
@@ -163,7 +207,7 @@ export function LogPanel({ lines }: { lines: LogEntry[] }) {
       >
         <div className="p-3 font-mono text-xs leading-relaxed">
           {shown.length ? (
-            shown.map((e, i) => <Row key={i} e={e} />)
+            shown.map((e, i) => <Row key={i} e={e} tag={tagOf(e)} />)
           ) : (
             <div className="text-muted-foreground">
               {lines.length
