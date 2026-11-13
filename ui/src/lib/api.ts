@@ -10,6 +10,7 @@ export type Settings = {
   extra_jvm_args: string
   offline_profiles: string[]
   active_profile: string | null
+  system_java: boolean
 }
 
 export type Account = { name: string; uuid: string }

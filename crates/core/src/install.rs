@@ -50,16 +50,37 @@ pub async fn install(paths: &Paths, reporter: &Reporter) -> Result<Installed> {
         "Fabric profile is for {:?}, not {mc}",
         profile.inherits_from
     );
-    let java_component = vanilla
+    let java_version = vanilla
         .java_version
-        .as_ref()
-        .map(|j| j.component.clone())
+        .clone()
         .context("Minecraft version does not say which Java it needs")?;
     let client_jar = minecraft::client_jar(paths, &vanilla)?;
     let version = fabric::merge(vanilla, profile);
 
-    reporter.stage("Скачиваем Java");
-    let java = java::install(&client, paths, &java_component, reporter).await?;
+    let system = if crate::settings::Settings::load(paths).system_java {
+        reporter.stage("Ищем Java на компьютере");
+        let major = java_version.major_version;
+        tokio::task::spawn_blocking(move || java::find_system(major))
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    let java = match system {
+        Some(found) => {
+            reporter.log(format!(
+                "Java {} уже установлена: {}",
+                found.version,
+                found.java.display()
+            ));
+            found.java
+        }
+        None => {
+            reporter.stage("Скачиваем Java");
+            java::install(&client, paths, &java_version.component, reporter).await?
+        }
+    };
 
     reporter.stage("Скачиваем Minecraft");
     let mut downloads = vec![client_jar.clone()];

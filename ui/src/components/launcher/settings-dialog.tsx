@@ -96,6 +96,20 @@ export function SettingsDialog({
           />
         </div>
 
+        <div className="flex items-center justify-between gap-4">
+          <div className="grid gap-1">
+            <Label htmlFor="system-java">Java с компьютера</Label>
+            <p className="text-xs text-muted-foreground">
+              Если нужная версия уже установлена, лаунчер не скачивает свою
+            </p>
+          </div>
+          <Switch
+            id="system-java"
+            checked={s.system_java}
+            onCheckedChange={(v) => setS((p) => ({ ...p, system_java: v }))}
+          />
+        </div>
+
         <div className="grid gap-2">
           <Label htmlFor="jvm">Доп. параметры Java</Label>
           <Input

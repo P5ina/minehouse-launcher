@@ -16,6 +16,8 @@ pub struct Settings {
     pub offline_profiles: Vec<String>,
     /// Nick from `offline_profiles` to play as; `None` = the Microsoft account.
     pub active_profile: Option<String>,
+    /// Use a fitting Java already on the computer instead of downloading one.
+    pub system_java: bool,
 }
 
 impl Default for Settings {
@@ -26,6 +28,7 @@ impl Default for Settings {
             close_on_launch: false,
             offline_profiles: Vec::new(),
             active_profile: None,
+            system_java: true,
         }
     }
 }
