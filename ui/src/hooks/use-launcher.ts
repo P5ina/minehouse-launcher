@@ -17,27 +17,42 @@ export type ServerState =
 const MAX_LOG = 2000
 
 // Строка журнала: шаг установки, обычный текст или строка лога игры.
-export type LogEntry =
+// instance — из какой сборки (сразу могут играть несколько).
+export type LogEntry = (
   | { kind: "stage"; text: string }
   | { kind: "text"; text: string }
   | ({ kind: "game" } & GameLine)
+) & { instance?: string }
 
-// Состояние главного окна: аккаунт, сервер, установка и журнал.
+/** Что сейчас с запуском сборки: шаг и прогресс. */
+export type Run = { stage: string; progress: number | null; running: boolean }
+
+// Состояние главного окна: аккаунт, сервер, запуски сборок и журнал.
 export function useLauncher() {
   const [info, setInfo] = useState<Info | null>(null)
   const [server, setServer] = useState<ServerState>({ state: "loading" })
-  const [playing, setPlaying] = useState(false)
-  const [stage, setStage] = useState("")
-  const [progress, setProgress] = useState<number | null>(null)
+  // По сборкам: несколько игр могут идти одновременно.
+  const [runs, setRuns] = useState<Record<string, Run>>({})
   const [log, setLog] = useState<LogEntry[]>([])
   const logRef = useRef<LogEntry[]>([])
+  const activeRef = useRef<string | null>(null)
+  activeRef.current = info?.active_instance ?? null
 
   const pushEntry = useCallback((entry: LogEntry) => {
     const next = [...logRef.current, entry]
     logRef.current = next.length > MAX_LOG ? next.slice(-1500) : next
     setLog(logRef.current)
   }, [])
-  const pushLog = useCallback((text: string) => pushEntry({ kind: "text", text }), [pushEntry])
+  const pushLog = useCallback(
+    (text: string, instance?: string) => pushEntry({ kind: "text", text, instance }),
+    [pushEntry]
+  )
+
+  const patchRun = useCallback((id: string | null | undefined, patch: Partial<Run>) => {
+    if (!id) return
+    const idle: Run = { stage: "", progress: null, running: false }
+    setRuns((r) => ({ ...r, [id]: { ...idle, ...r[id], ...patch } }))
+  }, [])
 
   const refresh = useCallback(async () => {
     setInfo(await invoke<Info>("info"))
@@ -55,43 +70,63 @@ export function useLauncher() {
   useEffect(() => {
     refresh().then(ping)
     const timer = setInterval(ping, 60_000)
-    const offProgress = listen<ProgressEvent>("progress", ({ payload: e }) => {
+    const offProgress = listen<ProgressEvent & { instance?: string }>("progress", ({ payload: e }) => {
+      // Без сборки шлёт только перенос папки игры: показываем у выбранной.
+      const id = e.instance ?? activeRef.current
       if (e.kind === "stage") {
-        setStage(e.name)
-        setProgress(null)
-        pushEntry({ kind: "stage", text: e.name })
+        patchRun(id, { stage: e.name, progress: null })
+        pushEntry({ kind: "stage", text: e.name, instance: e.instance })
       } else if (e.kind === "progress") {
-        setProgress(e.total > 0 ? Math.min(100, (e.done / e.total) * 100) : null)
+        patchRun(id, { progress: e.total > 0 ? Math.min(100, (e.done / e.total) * 100) : null })
       } else if (e.kind === "log") {
-        pushLog(e.line)
+        pushLog(e.line, e.instance)
       } else if (e.kind === "game") {
         pushEntry(e)
       }
     })
-    const offGame = listen<string>("game", ({ payload }) => {
-      if (payload === "started") setProgress(100)
+    const offGame = listen<{ instance: string; state: string }>("game", ({ payload }) => {
+      if (payload.state === "started") patchRun(payload.instance, { progress: 100 })
     })
     return () => {
       clearInterval(timer)
       offProgress.then((f) => f())
       offGame.then((f) => f())
     }
-  }, [refresh, ping, pushLog, pushEntry])
+  }, [refresh, ping, pushLog, pushEntry, patchRun])
 
+  // Запускает выбранную сборку; другие можно запускать, пока она играет.
   const play = useCallback(async () => {
-    setPlaying(true)
+    const id = activeRef.current
+    if (!id) return
+    patchRun(id, { running: true, stage: "Запускаем", progress: null })
+    let stage = "Игра закрыта"
     try {
       await invoke("play")
-      setStage("Игра закрыта")
     } catch (e) {
-      setStage(String(e))
-      pushLog(`Ошибка: ${e}`)
+      stage = String(e)
+      pushLog(`Ошибка: ${e}`, id)
     } finally {
-      setPlaying(false)
-      setProgress(null)
+      patchRun(id, { running: false, progress: null, stage })
       await refresh()
     }
-  }, [pushLog, refresh])
+  }, [pushLog, refresh, patchRun])
 
-  return { info, server, playing, stage, progress, log, pushLog, refresh, play }
+  const active = info?.active_instance ?? ""
+  const current = runs[active]
+  const runningIds = Object.keys(runs).filter((id) => runs[id].running)
+  return {
+    info,
+    server,
+    /** Выбранная сборка запускается или играет. */
+    playing: !!current?.running,
+    /** Идёт хоть одна игра. */
+    anyPlaying: runningIds.length > 0,
+    runningIds,
+    stage: current?.stage ?? "",
+    progress: current?.progress ?? null,
+    log,
+    pushLog,
+    refresh,
+    play,
+  }
 }

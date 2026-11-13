@@ -44,10 +44,17 @@ export function App() {
     <TooltipProvider delay={300}>
       <div className="relative flex h-full flex-col">
         <UpdateBanner enabled={l.info?.self_update ?? false} />
-        <TopBar info={l.info} playing={l.playing} onLog={l.pushLog} onChanged={l.refresh} />
+        <TopBar info={l.info} running={l.runningIds} onLog={l.pushLog} onChanged={l.refresh} />
         <main className="relative isolate flex min-h-0 flex-1 flex-col">
-          <Hero server={l.server} paused={l.playing} compact={showLog} />
-          {showLog ? <LogPanel lines={l.log} /> : <NewsStrip />}
+          <Hero server={l.server} paused={l.anyPlaying} compact={showLog} />
+          {showLog ? (
+            <LogPanel
+              lines={l.log}
+              names={Object.fromEntries((l.info?.instances ?? []).map((i) => [i.id, i.name]))}
+            />
+          ) : (
+            <NewsStrip />
+          )}
         </main>
         <BottomBar
           info={l.info}
@@ -79,7 +86,7 @@ export function App() {
           open={settingsOpen}
           onOpenChange={setSettingsOpen}
           info={l.info}
-          playing={l.playing}
+          playing={l.anyPlaying}
           onChanged={l.refresh}
           onOnboarding={() => setTour(true)}
         />

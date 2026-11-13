@@ -55,11 +55,12 @@ const TITLES: Record<NameMode, { title: string; text: string; button: string }> 
 // своя папка игры, а Java и Minecraft общие.
 export function InstanceMenu({
   info,
-  disabled,
+  running,
   onChanged,
 }: {
   info: Info | null
-  disabled: boolean
+  /** Сборки, которые сейчас запускаются или играют. */
+  running: string[]
   onChanged: () => Promise<void>
 }) {
   const [mode, setMode] = useState<NameMode | null>(null)
@@ -112,11 +113,19 @@ export function InstanceMenu({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger
-          disabled={disabled}
           className="flex h-8 max-w-56 min-w-0 items-center gap-2 rounded-md px-2 text-sm outline-none hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-60"
         >
           <Layers className="size-4 shrink-0 text-muted-foreground" />
           <span className="truncate font-medium">{active.name}</span>
+          {running.includes(active.id) ? (
+            <span className="rounded bg-emerald-500/15 px-1.5 text-[10px] leading-4 text-emerald-400">в игре</span>
+          ) : (
+            running.length > 0 && (
+              <span className="rounded bg-secondary px-1.5 text-[10px] leading-4 text-muted-foreground tabular-nums">
+                ещё {running.length} в игре
+              </span>
+            )
+          )}
           <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-64">
@@ -126,6 +135,12 @@ export function InstanceMenu({
               {info.instances.map((i) => (
                 <DropdownMenuRadioItem key={i.id} value={i.id}>
                   <span className="truncate">{i.name}</span>
+                  {running.includes(i.id) && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <span className="size-1.5 rounded-full bg-emerald-500" />
+                      играет
+                    </span>
+                  )}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
@@ -150,7 +165,7 @@ export function InstanceMenu({
           <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"
-            disabled={info.instances.length < 2}
+            disabled={info.instances.length < 2 || running.includes(active.id)}
             onClick={() => {
               setError("")
               setRemoving(true)
