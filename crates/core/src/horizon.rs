@@ -407,6 +407,17 @@ fn unpack_build(
     let mut out = std::fs::File::create(&target)?;
     std::io::copy(&mut entry, &mut out)?;
     drop(out);
+    // Should a macOS Nightly ship the game as an app bundle, its executable
+    // is ours too (the launcher always starts the one at the folder's top).
+    let bundled = unpacked.join("Horizon.app/Contents/MacOS").join(&exe);
+    if bundled.exists() {
+        std::fs::copy(&target, &bundled)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&bundled, std::fs::Permissions::from_mode(0o755))?;
+        }
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
