@@ -4,6 +4,7 @@
 //!   mh-cli login           Microsoft sign-in in the terminal, then play
 //!   mh-cli mods [list | search <q> | add <project> | jar <path> | rm <file> | update | sync]
 //!   mh-cli instances [list | new <name> | use <id> | rm <id> | dir <path>]
+//!   mh-cli java [major]   which installed Java the launcher would use
 //!   mh-cli packs <resource|shader> [list | search <q> | add <project> | zip <path> | on|off <file> | rm <file> | update]
 use anyhow::Result;
 use minehouse_core::{
@@ -72,6 +73,13 @@ async fn main() -> Result<()> {
         Some("mods") => mods(&paths).await?,
         Some("packs") => content_packs(&paths).await?,
         Some("instances") => instances_cmd()?,
+        Some("java") => {
+            let major: u32 = std::env::args().nth(2).as_deref().unwrap_or("25").parse()?;
+            match minehouse_core::java::find_system(major) {
+                Some(j) => println!("Java {} → {}", j.version, j.java.display()),
+                None => println!("Java {major} на компьютере не найдена, лаунчер скачает свою"),
+            }
+        }
         _ => {
             eprintln!("usage: mh-cli install | ping | login | mods ... | packs ... | instances ...")
         }

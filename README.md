@@ -11,7 +11,7 @@ Minecraft, Fabric и сборки MineHouse, запуск сразу на `play.
 | Что | Откуда | Где в коде |
 | --- | --- | --- |
 | Вход | Microsoft OAuth (device code) → Xbox Live → XSTS → Minecraft services, проверка лицензии | `crates/core/src/auth.rs` |
-| Java | Рантайм Mojang (тот же, что у официального лаунчера), компонент из version JSON | `java.rs` |
+| Java | Сначала ищет уже установленную Java нужной версии и разрядности (JAVA_HOME, PATH, папки JDK, официальный лаунчер, Prism; `mh-cli java`), иначе качает рантайм Mojang по компоненту из version JSON. Выключается в настройках | `java.rs` |
 | Minecraft | `piston-meta.mojang.com`: клиент, библиотеки, ассеты, log4j-конфиг | `minecraft.rs` |
 | Fabric | Профиль с `meta.fabricmc.net`, сливается поверх ванильной версии | `fabric.rs` |
 | Сборка | `https://www.minehouse.pro/modpack/manifest.json` (sha512 каждого файла) | `modpack.rs` |
